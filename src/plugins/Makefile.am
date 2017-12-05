@@ -50,6 +50,9 @@ if ENABLE_FLOWPROBE_PLUGIN
 include flowprobe.am
 endif
 
+if ENABLE_GTPDP_PLUGIN
+include gtpdp.am
+endif
 
 if ENABLE_GTPU_PLUGIN
 include gtpu.am
