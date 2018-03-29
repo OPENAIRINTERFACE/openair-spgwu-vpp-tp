@@ -867,7 +867,7 @@ process_error_indication (vlib_main_t * vm,
       gtpu_header_t * gtpu;
       gtp_up_session_t * t;
       vlib_buffer_t * b;
-      u32 session_index;
+      u32 session_index = ~0;
       u32 bi, err;
       bi = buffers[0];
 
