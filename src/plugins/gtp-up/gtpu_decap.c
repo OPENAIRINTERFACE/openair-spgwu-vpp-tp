@@ -961,7 +961,7 @@ VLIB_REGISTER_NODE (gtp_error_ind_node) = {
   .format_trace = format_gtpu_error_ind_trace,
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH (gtp_error_ind_node,gtp_error_ind)
+VLIB_NODE_FUNCTION_MULTIARCH (gtp_error_ind_node,process_error_indication)
 
 typedef enum {
   IP_GTPU_BYPASS_NEXT_DROP,
