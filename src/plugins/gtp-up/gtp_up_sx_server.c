@@ -463,7 +463,7 @@ static session_cb_vft_t gtp_up_sx_server = {
     .session_accept_callback = gtp_up_sx_session_create_callback,
     .session_disconnect_callback = gtp_up_sx_session_disconnect_callback,
     .session_connected_callback = gtp_up_sx_session_connected_callback,
-    .builtin_server_rx_callback = gtp_up_sx_server_rx_callback,
+    .builtin_app_rx_callback = gtp_up_sx_server_rx_callback,
     .session_reset_callback = gtp_up_sx_session_reset_callback
 };
 /* *INDENT-ON* */
