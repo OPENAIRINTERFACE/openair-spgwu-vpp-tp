@@ -1394,7 +1394,7 @@ static int add_wildcard_ip4_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr
   if (rte_acl_add_rules(ctx, (const struct rte_acl_rule *)&r, 1) < 0)
     rte_exit(EXIT_FAILURE, "IP4 add rules failed\n");
 
-    return 0;
+  return 0;
 }
 
 static int add_wildcard_ip6_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr,
