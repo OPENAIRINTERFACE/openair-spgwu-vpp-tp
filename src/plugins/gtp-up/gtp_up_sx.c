@@ -1873,7 +1873,7 @@ static u8 *
 format_flags(u8 * s, va_list * args)
 {
   uint64_t flags = va_arg (*args, uint64_t);
-  const char **atoms = va_arg (*args, char **);
+  const char **atoms = va_arg (*args, const char **);
   int first = 1;
 
   s = format(s, "[");
