@@ -61,7 +61,7 @@ typedef enum {
 
 typedef struct {
   u32 session_index;
-  u64 cp_f_seid;
+  u64 cp_seid;
   u8 packet_data[64 - 1 * sizeof (u32)];
 } gtp_up_if_input_trace_t;
 
@@ -74,7 +74,7 @@ u8 * format_gtp_up_if_input_trace (u8 * s, va_list * args)
   u32 indent = format_get_indent (s);
 
   s = format (s, "gtp_up_session%d seid %d \n%U%U",
-	      t->session_index, t->cp_f_seid,
+	      t->session_index, t->cp_seid,
 	      format_white_space, indent,
 	      format_ip4_header, t->packet_data, sizeof (t->packet_data));
   return s;
@@ -178,7 +178,7 @@ gtp_up_if_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * fr
 	      gtp_up_if_input_trace_t *tr =
 		vlib_add_trace (vm, node, b, sizeof (*tr));
 	      tr->session_index = sidx;
-	      tr->cp_f_seid = sess->cp_f_seid;
+	      tr->cp_seid = sess->cp_seid;
 	      clib_memcpy (tr->packet_data, vlib_buffer_get_current (b),
 			   sizeof (tr->packet_data));
 	    }

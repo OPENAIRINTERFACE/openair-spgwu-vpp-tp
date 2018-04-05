@@ -323,10 +323,11 @@ typedef struct {
 } gtp_up_acl_ctx_t;
 
 typedef struct {
-  /* Sx UDP socket handle */
-  u64 session_handle;
+  int fib_index;
+  ip46_address_t up_address;
+  u64 cp_seid;
+  ip46_address_t cp_address;
 
-  u64 cp_f_seid;
   uint32_t flags;
 #define SX_UPDATING    0x8000
 

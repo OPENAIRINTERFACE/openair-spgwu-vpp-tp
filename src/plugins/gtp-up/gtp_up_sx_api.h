@@ -18,15 +18,12 @@
 #define _GTP_UP_SX_ERL_H
 
 #include <vppinfra/types.h>
-#include <vnet/session/session.h>
+#include "gtp_up_sx_server.h"
 
 #define PRIsMAC "%02x:%02x:%02x:%02x:%02x:%02x"
 #define ARGsMAC(m) (m)[0], (m)[1], (m)[2], (m)[3], (m)[4], (m)[5]
 
-size_t gtp_up_sx_api_session_data_size(void);
-void gtp_up_sx_api_session_data_init(void *, time_t);
-
-int gtp_up_sx_handle_msg(stream_session_t * s, void *sx, u8 * data);
+int gtp_up_sx_handle_msg(sx_msg_t * msg);
 
 u8 * format_ipfilter(u8 * s, va_list * args);
 

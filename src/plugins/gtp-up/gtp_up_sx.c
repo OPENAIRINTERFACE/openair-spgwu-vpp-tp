@@ -434,7 +434,8 @@ void sx_release_association(gtp_up_node_assoc_t *n)
   pool_put(gtm->nodes, n);
 }
 
-gtp_up_session_t *sx_create_session(uint64_t cp_f_seid, u64 session_handle)
+gtp_up_session_t *sx_create_session(int sx_fib_index, const ip46_address_t *up_address,
+				    uint64_t cp_seid, const ip46_address_t *cp_address)
 {
   vnet_main_t *vnm = gtp_up_main.vnet_main;
   l2input_main_t *l2im = &l2input_main;
@@ -446,10 +447,13 @@ gtp_up_session_t *sx_create_session(uint64_t cp_f_seid, u64 session_handle)
   pool_get_aligned (gtm->sessions, sx, CLIB_CACHE_LINE_BYTES);
   memset (sx, 0, sizeof (*sx));
 
-  sx->cp_f_seid = cp_f_seid;
-  sx->session_handle = session_handle;
+  sx->fib_index = sx_fib_index;
+  sx->up_address = *up_address;
+  sx->cp_seid = cp_seid;
+  sx->cp_address = *cp_address;
+
   //TODO sx->up_f_seid = sx - gtm->sessions;
-  hash_set (gtm->session_by_id, cp_f_seid, sx - gtm->sessions);
+  hash_set (gtm->session_by_id, cp_seid, sx - gtm->sessions);
 
   vnet_hw_interface_t *hi;
 
@@ -800,7 +804,7 @@ int sx_disable_session(gtp_up_session_t *sx)
   gtpu4_tunnel_key_t *v4_teid;
   gtpu6_tunnel_key_t *v6_teid;
 
-  hash_unset (gtm->session_by_id, sx->cp_f_seid);
+  hash_unset (gtm->session_by_id, sx->cp_seid);
   vec_foreach (v4_teid, active->v4_teid)
     sx_add_del_v4_teid(v4_teid, sx, 0);
   vec_foreach (v6_teid, active->v6_teid)
@@ -1439,7 +1443,7 @@ static int add_wildcard_ip6_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr
   return 0;
 }
 
-static int sx_acl_create(u64 cp_f_seid, struct rules *rules, int direction)
+static int sx_acl_create(u64 cp_seid, struct rules *rules, int direction)
 {
   /*
    * Check numa socket enable or disable based on
@@ -1465,7 +1469,7 @@ static int sx_acl_create(u64 cp_f_seid, struct rules *rules, int direction)
   if (rules->flags & SX_SDF_IPV4)
     {
       snprintf(name, sizeof(name), "sx_%"PRIu64"_sdf_ip4_%d",
-	       cp_f_seid, direction);
+	       cp_seid, direction);
       ctx->ip4 = rte_acl_create(&ip4acl);
       if (!ctx->ip4)
 	rte_exit(EXIT_FAILURE, "Failed to create ACL context\n");
@@ -1474,7 +1478,7 @@ static int sx_acl_create(u64 cp_f_seid, struct rules *rules, int direction)
   if (rules->flags & SX_SDF_IPV6)
     {
       snprintf(name, sizeof(name), "sx_%"PRIu64"_sdf_ip6_%d",
-	       cp_f_seid, direction);
+	       cp_seid, direction);
       ctx->ip6 = rte_acl_create(&ip6acl);
       if (!ctx->ip6)
 	rte_exit(EXIT_FAILURE, "Failed to create ACL context\n");
@@ -1577,7 +1581,7 @@ static void rules_add_v6_teid(struct rules * r, const ip6_address_t * addr, u32 
 static int build_sx_sdf(gtp_up_session_t *sx)
 {
   struct rules *pending = sx_get_rules(sx, SX_PENDING);
-  uint64_t cp_f_seid = sx->cp_f_seid;
+  uint64_t cp_seid = sx->cp_seid;
   gtp_up_pdr_t *pdr;
 
   pending->flags &= ~(SX_SDF_IPV4 | SX_SDF_IPV6);
@@ -1642,8 +1646,8 @@ static int build_sx_sdf(gtp_up_session_t *sx)
   if (vec_len(pending->pdr) == 0)
     return 0;
 
-  sx_acl_create(cp_f_seid, pending, UL_SDF);
-  sx_acl_create(cp_f_seid, pending, DL_SDF);
+  sx_acl_create(cp_seid, pending, UL_SDF);
+  sx_acl_create(cp_seid, pending, DL_SDF);
 
   vec_foreach (pdr, pending->pdr)
     {
@@ -1921,7 +1925,7 @@ format_sx_session(u8 * s, va_list * args)
 
   s = format(s, "CP F-SEID: 0x%016" PRIx64 " (%" PRIu64 ") @ %p\n"
 	     "Active: %u\nPending: %u\n",
-	     sx->cp_f_seid, sx->cp_f_seid, sx,
+	     sx->cp_seid, sx->cp_seid, sx,
 	     sx->active ^ SX_ACTIVE, sx->active ^ SX_PENDING);
 
   s = format(s, "PDR: %p\nFAR: %p\n",

@@ -23,7 +23,8 @@ gtp_up_node_assoc_t *sx_get_association(pfcp_node_id_t *node_id);
 gtp_up_node_assoc_t *sx_new_association(pfcp_node_id_t *node_id);
 void sx_release_association(gtp_up_node_assoc_t *n);
 
-gtp_up_session_t *sx_create_session(uint64_t cp_f_seid, u64 session_handle);
+gtp_up_session_t *sx_create_session(int sx_fib_index, const ip46_address_t *up_address,
+				    uint64_t cp_seid, const ip46_address_t *cp_address);
 void sx_update_session(gtp_up_session_t *sx);
 int sx_disable_session(gtp_up_session_t *sx);
 void sx_free_session(gtp_up_session_t *sx);

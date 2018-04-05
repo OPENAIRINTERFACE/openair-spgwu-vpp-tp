@@ -18,8 +18,34 @@
 #define _GTP_UP_SX_SERVER_H
 
 #include <time.h>
-#include <vnet/session/session.h>
-#include <vnet/session/application_interface.h>
+#include "pfcp.h"
+
+typedef struct
+{
+  u32 fib_index;
+
+  struct {
+    ip46_address_t address;
+    u16 port;
+  } rmt;
+
+  struct {
+    ip46_address_t address;
+    u16 port;
+  } lcl;
+
+  union {
+    u8 * data;
+    pfcp_header_t * hdr;
+  };
+} sx_msg_t;
+
+always_inline void sx_msg_free (sx_msg_t * m)
+{
+  if (m)
+    vec_free(m->data);
+  clib_mem_free(m);
+}
 
 typedef struct
 {
@@ -31,26 +57,25 @@ typedef struct
 
 typedef struct
 {
-  u8 **rx_buf;
-  svm_queue_t **vpp_queue;
-  svm_queue_t *vl_input_queue;  /**< Sever's event queue */
-  u64 byte_index;
-
-  u32 *free_sx_process_node_indices;
-
-  u32 app_index;
-  u32 my_client_index;          /**< API client handle */
   u32 node_index;               /**< process node index for evnt scheduling */
-
-  sx_node_t * nodes;
-  BVT (clib_bihash) nodes_hash;
-
   time_t start_time;
+  ip46_address_t address;
 
   vlib_main_t *vlib_main;
 } sx_server_main_t;
 
-void gtp_up_sx_send_data (stream_session_t * s, u8 * data);
-void gtp_up_sx_server_notify(u64 session_handle, u8 * data);
+extern sx_server_main_t sx_server_main;
+
+extern vlib_node_registration_t sx4_input_node;
+extern vlib_node_registration_t sx6_input_node;
+
+#define UDP_DST_PORT_SX 8805
+
+void gtp_up_sx_send_data (sx_msg_t * msg);
+void gtp_up_sx_server_notify (sx_msg_t * msg);
+
+void gtp_up_sx_handle_input (vlib_main_t * vm, vlib_buffer_t *b, int is_ip4);
+
+clib_error_t * sx_server_main_init (vlib_main_t * vm);
 
 #endif /* _GTP_UP_SX_SERVER_H */

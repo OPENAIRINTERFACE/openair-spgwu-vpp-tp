@@ -29,6 +29,7 @@
 #include <gtp-up/gtp_up.h>
 #include <gtp-up/gtp_up_sx.h>
 #include <gtp-up/pfcp.h>
+#include <gtp-up/gtp_up_sx_server.h>
 
 /* Action function shared between message handler and debug CLI */
 
@@ -817,7 +818,7 @@ static clib_error_t * gtp_up_init (vlib_main_t * vm)
 
   sm->fib_node_type = fib_node_register_new_type (&gtp_up_vft);
 
-  return 0;
+  return sx_server_main_init(vm);
 }
 
 VLIB_INIT_FUNCTION (gtp_up_init);
