@@ -1390,11 +1390,11 @@ static int add_wildcard_ip4_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr
   switch (pdr->pdi.src_intf)
     {
     case SRC_INTF_ACCESS:
-      acl_set_ue_ip4(&r, DST_FIELD_IPV4, pdr);
+      acl_set_ue_ip4(&r, SRC_FIELD_IPV4, pdr);
       break;
 
     default:
-      acl_set_ue_ip4(&r, SRC_FIELD_IPV4, pdr);
+      acl_set_ue_ip4(&r, DST_FIELD_IPV4, pdr);
       break;
     }
 
@@ -1734,7 +1734,7 @@ int sx_update_apply(gtp_up_session_t *sx)
       pending->flags = active->flags;
     }
 
-  if (pending->far)
+  if (pending_far)
     {
       gtp_up_far_t *far;
 
