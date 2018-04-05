@@ -616,6 +616,7 @@ peer_addr_ref (void * ip, uword nwi, int is_ip4)
   vrf = nwi_to_vrf(nwi);
   encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
+  memset(&key, 0, sizeof(key));
   ip_set(&key.addr, ip, is_ip4);
   key.fib_index = encap_fib_index;
 
@@ -623,6 +624,7 @@ peer_addr_ref (void * ip, uword nwi, int is_ip4)
   if (peer)
     {
       p = pool_elt_at_index (gtm->peers, peer[0]);
+      p->ref_cnt++;
       return peer[0];
     }
 
@@ -671,6 +673,7 @@ peer_addr_unref (void * ip, uword nwi, int is_ip4)
   vrf = nwi_to_vrf(nwi);
   encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
+  memset(&key, 0, sizeof(key));
   ip_set(&key.addr, ip, is_ip4);
   key.fib_index = encap_fib_index;
 
