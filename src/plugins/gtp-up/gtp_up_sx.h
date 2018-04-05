@@ -50,7 +50,6 @@ void sx_update_finish(gtp_up_session_t *sx);
 
 gtp_up_session_t *sx_lookup(uint64_t sess_id);
 
-u8 * format_sx_session(u8 * s, va_list * args);
 void sx_session_dump_tbls(void);
 
 static inline struct rules *sx_get_rules(gtp_up_session_t *sx, int rules)
@@ -65,5 +64,8 @@ void process_urrs(vlib_main_t *vm, struct rules *r,
 		  u8 is_dl, u8 is_ul);
 
 void gtp_up_sx_error_report(gtp_up_session_t * sx, gtp_error_ind_t * error);
+
+/* format functions */
+u8 * format_sx_session(u8 * s, va_list * args);
 
 #endif /* _GTP_UP_SX_H_ */

@@ -1016,7 +1016,8 @@ ip_udp_gtpu_rewrite (gtp_up_far_forward_t * ff)
   } r =
   {
   .rw = 0};
-  int len = ip46_address_is_ip4(&ff->addr) ? sizeof *r.h4 : sizeof *r.h6;
+  u8 is_ip4 = !!(ff->outer_header_creation.description & OUTER_HEADER_CREATION_IP4);
+  int len = is_ip4 ? sizeof *r.h4 : sizeof *r.h6;
   u32 sw_if_index = ff->dst_sw_if_index;
 
   vec_validate_aligned (r.rw, len - 1, CLIB_CACHE_LINE_BYTES);
@@ -1024,7 +1025,7 @@ ip_udp_gtpu_rewrite (gtp_up_far_forward_t * ff)
   udp_header_t *udp;
   gtpu_header_t *gtpu;
   /* Fixed portion of the (outer) ip header */
-  if (ip46_address_is_ip4(&ff->addr))
+  if (is_ip4)
     {
       ip4_header_t *ip = &r.h4->ip4;
       udp = &r.h4->udp;
@@ -1034,7 +1035,7 @@ ip_udp_gtpu_rewrite (gtp_up_far_forward_t * ff)
       ip->protocol = IP_PROTOCOL_UDP;
 
       ip->src_address = *(ip4_address_t *)ip_interface_get_first_ip (sw_if_index, 1);
-      ip->dst_address = ff->addr.ip4;
+      ip->dst_address = ff->outer_header_creation.ip4;
 
       /* we fix up the ip4 header length and checksum after-the-fact */
       ip->checksum = ip4_header_checksum (ip);
@@ -1050,7 +1051,7 @@ ip_udp_gtpu_rewrite (gtp_up_far_forward_t * ff)
       ip->protocol = IP_PROTOCOL_UDP;
 
       ip->src_address = *(ip6_address_t *)ip_interface_get_first_ip (sw_if_index, 0);
-      ip->dst_address = ff->addr.ip6;
+      ip->dst_address = ff->outer_header_creation.ip6;
     }
 
   /* UDP header, randomize src port on something, maybe? */
@@ -1060,7 +1061,7 @@ ip_udp_gtpu_rewrite (gtp_up_far_forward_t * ff)
   /* GTPU header */
   gtpu->ver_flags = GTPU_V1_VER | GTPU_PT_GTP;
   gtpu->type = GTPU_TYPE_GTPU;
-  gtpu->teid = clib_host_to_net_u32 (ff->teid);
+  gtpu->teid = clib_host_to_net_u32 (ff->outer_header_creation.teid);
 
   ff->rewrite = r.rw;
 
@@ -1124,9 +1125,7 @@ static int handle_create_far(gtp_up_session_t *sess, pfcp_create_far_t *create_f
 			FORWARDING_PARAMETERS_OUTER_HEADER_CREATION))
 	    {
 	      create->forward.outer_header_creation =
-		far->forwarding_parameters.outer_header_creation.type + 1;
-	      create->forward.teid = far->forwarding_parameters.outer_header_creation.teid;
-	      create->forward.addr = far->forwarding_parameters.outer_header_creation.addr;
+		far->forwarding_parameters.outer_header_creation;
 
 	      ip_udp_gtpu_rewrite(&create->forward);
 	    }
@@ -1223,11 +1222,7 @@ static int handle_update_far(gtp_up_session_t *sess, pfcp_update_far_t *update_f
 		sx_send_end_marker(sess, far->far_id);
 
 	      update->forward.outer_header_creation =
-		far->update_forwarding_parameters.outer_header_creation.type + 1;
-	      update->forward.teid =
-		far->update_forwarding_parameters.outer_header_creation.teid;
-	      update->forward.addr =
-		far->update_forwarding_parameters.outer_header_creation.addr;
+		far->update_forwarding_parameters.outer_header_creation;
 
 	      ip_udp_gtpu_rewrite(&update->forward);
 	    }

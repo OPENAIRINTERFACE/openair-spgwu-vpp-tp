@@ -106,7 +106,7 @@ void gtpu_send_end_marker(gtp_up_far_forward_t * forward)
   vnet_buffer (p0)->sw_if_index[VLIB_TX] = peer0->encap_fib_index;
   vnet_buffer(p0)->ip.adj_index[VLIB_TX] = peer0->next_dpo.dpoi_index;
 
-  is_ip4 = forward->outer_header_creation == GTP_U_UDP_IPv4;
+  is_ip4 = !!(forward->outer_header_creation.description & OUTER_HEADER_CREATION_IP4);
 
   if (is_ip4)
     {
@@ -591,7 +591,7 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      gtp_up_encap_trace_t *tr =
 		vlib_add_trace (vm, node, b0, sizeof (*tr));
 	      tr->session_index = s0 - gtm->sessions;
-	      tr->teid = far0->forward.teid;
+	      tr->teid = far0->forward.outer_header_creation.teid;
 	   }
 
 	  if (PREDICT_FALSE(b1->flags & VLIB_BUFFER_IS_TRACED))
@@ -599,7 +599,7 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      gtp_up_encap_trace_t *tr =
 		vlib_add_trace (vm, node, b1, sizeof (*tr));
 	      tr->session_index = s1 - gtm->sessions;
-	      tr->teid = far1->forward.teid;
+	      tr->teid = far1->forward.outer_header_creation.teid;
 	    }
 
 	  if (PREDICT_FALSE(b2->flags & VLIB_BUFFER_IS_TRACED))
@@ -607,7 +607,7 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      gtp_up_encap_trace_t *tr =
 		vlib_add_trace (vm, node, b2, sizeof (*tr));
 	      tr->session_index = s2 - gtm->sessions;
-	      tr->teid = far2->forward.teid;
+	      tr->teid = far2->forward.outer_header_creation.teid;
 	    }
 
 	  if (PREDICT_FALSE(b3->flags & VLIB_BUFFER_IS_TRACED))
@@ -615,7 +615,7 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      gtp_up_encap_trace_t *tr =
 		vlib_add_trace (vm, node, b3, sizeof (*tr));
 	      tr->session_index = s3 - gtm->sessions;
-	      tr->teid = far3->forward.teid;
+	      tr->teid = far3->forward.outer_header_creation.teid;
 	    }
 
 	  vlib_validate_buffer_enqueue_x4 (vm, node, next_index,
@@ -772,7 +772,7 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      gtp_up_encap_trace_t *tr =
 		vlib_add_trace (vm, node, b0, sizeof (*tr));
 	      tr->session_index = s0 - gtm->sessions;
-	      tr->teid = far0->forward.teid;
+	      tr->teid = far0->forward.outer_header_creation.teid;
 	   }
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
 					   to_next, n_left_to_next,

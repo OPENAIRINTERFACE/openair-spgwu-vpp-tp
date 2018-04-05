@@ -293,31 +293,36 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		}
 
 	      ip4 = (ip4_header_t *)pl;
-	      switch (far->forward.outer_header_creation)
+
+	      if (far->forward.outer_header_creation.description
+		  & OUTER_HEADER_CREATION_GTP_IP4)
 		{
-		case GTP_U_UDP_IPv4:
 		  next = GTP_UP_CLASSIFY_NEXT_GTP_UP4_ENCAP;
-		  break;
-
-		case GTP_U_UDP_IPv6:
+		}
+	      else if (far->forward.outer_header_creation.description
+		       & OUTER_HEADER_CREATION_GTP_IP6)
+		{
 		  next = GTP_UP_CLASSIFY_NEXT_GTP_UP6_ENCAP;
-		  break;
-
-		case UDP_IPv4:
+		}
+	      else if (far->forward.outer_header_creation.description
+		       & OUTER_HEADER_CREATION_UDP_IP4)
+		{
 		  next = GTP_UP_CLASSIFY_NEXT_DROP;
 		  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
 		  goto trace;
-
-		case UDP_IPv6:
+		}
+	      else if (far->forward.outer_header_creation.description
+		       & OUTER_HEADER_CREATION_UDP_IP6)
+		{
 		  next = GTP_UP_CLASSIFY_NEXT_DROP;
 		  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
 		  goto trace;
-
-		default:
+		}
+	      else
+		{
 		  ip4 = (ip4_header_t *)vlib_buffer_get_current(b);
 		  next = ((ip4->ip_version_and_header_length & 0xF0) == 0x40) ?
 		    GTP_UP_CLASSIFY_NEXT_IP4_INPUT : GTP_UP_CLASSIFY_NEXT_IP6_INPUT;
-		  break;
 		}
 
 #define IS_DL(_pdr, _far)						\

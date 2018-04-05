@@ -604,21 +604,19 @@ static u32 nwi_to_vrf(uword nwi)
 }
 
 static uword
-peer_addr_ref (ip46_address_t * ip, uword nwi)
+peer_addr_ref (void * ip, uword nwi, int is_ip4)
 {
   gtp_up_main_t *gtm = &gtp_up_main;
   ip46_address_fib_t key;
   u32 encap_fib_index;
   gtp_up_peer_t * p;
   uword *peer;
-  int is_ip4;
   u32 vrf;
 
-  is_ip4 = ip46_address_is_ip4 (ip);
   vrf = nwi_to_vrf(nwi);
   encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
-  key.addr = *ip;
+  ip_set(&key.addr, ip, is_ip4);
   key.fib_index = encap_fib_index;
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
@@ -648,7 +646,7 @@ peer_addr_ref (ip46_address_t * ip, uword nwi)
 
   fib_node_init (&p->node, gtm->fib_node_type);
   fib_prefix_t tun_dst_pfx;
-  fib_prefix_from_ip46_addr (ip, &tun_dst_pfx);
+  fib_prefix_from_ip46_addr (&key.addr, &tun_dst_pfx);
 
   p->fib_entry_index = fib_table_entry_special_add
     (p->encap_fib_index, &tun_dst_pfx, FIB_SOURCE_RR,
@@ -661,21 +659,19 @@ peer_addr_ref (ip46_address_t * ip, uword nwi)
 }
 
 static uword
-peer_addr_unref (ip46_address_t * ip, uword nwi)
+peer_addr_unref (void * ip, uword nwi, int is_ip4)
 {
   gtp_up_main_t *gtm = &gtp_up_main;
   ip46_address_fib_t key;
   u32 encap_fib_index;
   gtp_up_peer_t * p;
   uword *peer;
-  int is_ip4;
   u32 vrf;
 
-  is_ip4 = ip46_address_is_ip4 (ip);
   vrf = nwi_to_vrf(nwi);
   encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
-  key.addr = *ip;
+  ip_set(&key.addr, ip, is_ip4);
   key.fib_index = encap_fib_index;
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
@@ -763,8 +759,15 @@ static void sx_free_rules(gtp_up_session_t *sx, int rule)
   vec_free(rules->pdr);
   vec_foreach (far, rules->far)
     {
-      if (far->forward.outer_header_creation != 0)
-	peer_addr_unref(&far->forward.addr, far->forward.nwi);
+      if (far->forward.outer_header_creation.description != 0)
+	{
+	  if (far->forward.outer_header_creation.description
+	      & OUTER_HEADER_CREATION_IP4)
+	    peer_addr_unref(&far->forward.outer_header_creation.ip4, far->forward.nwi, 1);
+	  else if (far->forward.outer_header_creation.description
+		   & OUTER_HEADER_CREATION_IP6)
+	    peer_addr_unref(&far->forward.outer_header_creation.ip6, far->forward.nwi, 0);
+	}
       vec_free(far->forward.rewrite);
     }
   vec_free(rules->far);
@@ -1733,19 +1736,28 @@ int sx_update_apply(gtp_up_session_t *sx)
       gtp_up_far_t *far;
 
       vec_foreach (far, pending->far)
-	if (far->forward.outer_header_creation != 0)
+	if (far->forward.outer_header_creation.description != 0)
 	  {
-	    far->forward.peer_idx = peer_addr_ref(&far->forward.addr, far->forward.nwi);
+	    if (far->forward.outer_header_creation.description
+		& OUTER_HEADER_CREATION_IP4)
+	      far->forward.peer_idx =
+		peer_addr_ref(&far->forward.outer_header_creation.ip4, far->forward.nwi, 1);
+	    else if (far->forward.outer_header_creation.description
+		     & OUTER_HEADER_CREATION_IP6)
+	      far->forward.peer_idx =
+		peer_addr_ref(&far->forward.outer_header_creation.ip6, far->forward.nwi, 0);
 
-	    switch (far->forward.outer_header_creation)
+	    if (far->forward.outer_header_creation.description
+		& OUTER_HEADER_CREATION_GTP_IP4)
 	      {
-	      case GTP_U_UDP_IPv4:
-		rules_add_v4_teid(pending, &far->forward.addr.ip4, far->forward.teid);
-		break;
-
-	      case GTP_U_UDP_IPv6:
-		rules_add_v6_teid(pending, &far->forward.addr.ip6, far->forward.teid);
-		break;
+		rules_add_v4_teid(pending, &far->forward.outer_header_creation.ip4,
+				  far->forward.outer_header_creation.teid);
+	      }
+	    else if (far->forward.outer_header_creation.description
+		     & OUTER_HEADER_CREATION_GTP_IP6)
+	      {
+		rules_add_v6_teid(pending, &far->forward.outer_header_creation.ip6,
+				  far->forward.outer_header_creation.teid);
 	      }
 	  }
     }
@@ -1873,29 +1885,6 @@ void process_urrs(vlib_main_t *vm, struct rules *r,
     }
 }
 
-static u8 *
-format_flags(u8 * s, va_list * args)
-{
-  uint64_t flags = va_arg (*args, uint64_t);
-  const char **atoms = va_arg (*args, const char **);
-  int first = 1;
-
-  s = format(s, "[");
-  for (int i = 0; i < 64 && atoms[i] != NULL; i++) {
-    if (!ISSET_BIT(flags, i))
-      continue;
-
-    if (!first)
-      s = format(s, ",");
-
-    s = format(s, "%s", atoms[i]);
-    first = 0;
-  }
-  s = format(s, "]");
-
-  return s;
-}
-
 static const char *apply_action_flags[] = {
   "DROP",
   "FORWARD",
@@ -1998,19 +1987,10 @@ format_sx_session(u8 * s, va_list * args)
       s = format(s, "  Forward:\n"
 		 "    Network Instance: %U\n"
 		 "    Destination Interface: %u\n"
-		 "    Outer Header Creation: %u\n",
+		 "    Outer Header Creation: %U\n",
 		 format_network_instance, nwi ? nwi->name : NULL,
-		 far->forward.dst_intf, far->forward.outer_header_creation);
-      switch (far->forward.outer_header_creation) {
-      case GTP_U_UDP_IPv4:
-      case GTP_U_UDP_IPv6:
-	s = format(s, "    FQ-TEID: %U:0x%08x\n",
-		   format_ip46_address, &far->forward.addr, IP46_TYPE_ANY,
-		   far->forward.teid);
-	break;
-      default:
-	break;
-      }
+		 far->forward.dst_intf,
+		 format_outer_header_creation, &far->forward.outer_header_creation);
     }
   }
 

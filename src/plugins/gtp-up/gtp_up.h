@@ -248,17 +248,7 @@ typedef struct {
   u32 dst_sw_if_index;
   uword nwi;
 
-  u8 outer_header_creation;
-#define GTP_U_UDP_IPv4  1
-#define GTP_U_UDP_IPv6  2
-#define UDP_IPv4        3
-#define UDP_IPv6        4
-
-  u32 teid;
-  ip46_address_t addr;
-
-  // TODO: UDP encap...
-  // u16 port;
+  pfcp_outer_header_creation_t outer_header_creation;
 
   u32 peer_idx;
   u8 * rewrite;

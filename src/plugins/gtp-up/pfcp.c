@@ -51,6 +51,28 @@
 
 /*************************************************************************/
 
+u8 * format_flags(u8 * s, va_list * args)
+{
+  uint64_t flags = va_arg (*args, uint64_t);
+  const char **atoms = va_arg (*args, const char **);
+  int first = 1;
+
+  s = format(s, "[");
+  for (int i = 0; i < 64 && atoms[i] != NULL; i++) {
+    if (!ISSET_BIT(flags, i))
+      continue;
+
+    if (!first)
+      s = format(s, ",");
+
+    s = format(s, "%s", atoms[i]);
+    first = 0;
+  }
+  s = format(s, "]");
+
+  return s;
+}
+
 u8 *
 format_network_instance(u8 * s, va_list * args)
 {
@@ -324,6 +346,17 @@ format_pfcp_ie(u8 * s, va_list * args)
   ({u16 *_V = (u16 *)(V);			\
     (V) += sizeof(u16);				\
     ntohs(*_V); })
+
+#define put_u16_little(V,I)						\
+  do {									\
+    *((u16 *)&(V)[_vec_len((V))]) = clib_host_to_little_u16((I));	\
+    _vec_len((V)) += sizeof(u16);					\
+  } while (0)
+
+#define get_u16_little(V)				\
+  ({u16 *_V = (u16 *)(V);				\
+    (V) += sizeof(u16);					\
+    clib_little_to_host_u16(*_V); })
 
 #define put_u24(V,I)					\
   do {							\
@@ -1854,6 +1887,38 @@ static int encode_linked_urr_id(void *p, u8 **vec)
   return 0;
 }
 
+static const char *outer_header_creation_description_flags[] = {
+  "GTP-U/UDP/IPv4",
+  "GTP-U/UDP/IPv6",
+  "UDP/IPv4",
+  "UDP/IPv6",
+  NULL
+};
+
+u8 *
+format_outer_header_creation(u8 * s, va_list * args)
+{
+  pfcp_outer_header_creation_t *i =
+    va_arg (*args, pfcp_outer_header_creation_t *);
+
+  s = format(s, "%U", format_flags, (u64)i->description,
+	     outer_header_creation_description_flags);
+
+  if (i->description & OUTER_HEADER_CREATION_GTP)
+    s = format(s, ",TEID:%08x", i->teid);
+
+  if (i->description & OUTER_HEADER_CREATION_IP4)
+    s = format(s, ",IP:%U", format_ip4_address, &i->ip4);
+
+  if (i->description & OUTER_HEADER_CREATION_IP6)
+    s = format(s, ",IP:%U", format_ip6_address, &i->ip6);
+
+  if (i->description & OUTER_HEADER_CREATION_UDP)
+    s = format(s, ",Port:%d", i->port);
+
+  return s;
+}
+
 static int decode_outer_header_creation(u8 *data, u16 length, void *p)
 {
   pfcp_outer_header_creation_t *v = p;
@@ -1861,53 +1926,51 @@ static int decode_outer_header_creation(u8 *data, u16 length, void *p)
   if (length < 1)
     return PFCP_CAUSE_INVALID_LENGTH;
 
-  v->type = get_u8(data);
-  length--;
-  if (v->type >= 4)
-    return PFCP_CAUSE_REQUEST_REJECTED;
+  v->description = get_u16_little(data);
+  length -= 2;
 
-  switch (v->type)
+  if (v->description == 0 ||
+      (!!(v->description & OUTER_HEADER_CREATION_GTP)) ==
+      (!!(v->description & OUTER_HEADER_CREATION_UDP)) ||
+      (v->description & OUTER_HEADER_CREATION_UDP) == OUTER_HEADER_CREATION_UDP)
     {
-    case 0:                               /* GTP-U/UDP/IPv4 */
-      if (length < 8)
-	return PFCP_CAUSE_INVALID_LENGTH;
-      v->teid = get_u32(data);
-      get_ip46_ip4(v->addr, data);
-
-      pfcp_debug ("PFCP: Outer Header Creation GTP-U/UDP/IPv4, TEID:%08x,IP:%U.",
-		    v->teid, format_ip46_address, &v->addr, IP46_TYPE_ANY);
-      break;
-
-    case 1:                               /* GTP-U/UDP/IPv6 */
-      if (length < 20)
-	return PFCP_CAUSE_INVALID_LENGTH;
-      v->teid = get_u32(data);
-      get_ip46_ip6(v->addr, data);
-
-      pfcp_debug ("PFCP: Outer Header Creation GTP-U/UDP/IPv6, TEID:%08x,IP:%U.",
-		    v->teid, format_ip46_address, &v->addr, IP46_TYPE_ANY);
-      break;
-
-    case 2:                               /* UDP/IPv4 */
-      if (length < 6)
-	return PFCP_CAUSE_INVALID_LENGTH;
-      get_ip46_ip4(v->addr, data);
-      v->port = get_u16(data);
-
-      pfcp_debug ("PFCP: Outer Header Creation UDP/IPv4, IP:%U,Port:%d.",
-		    format_ip46_address, &v->addr, IP46_TYPE_ANY, v->port);
-      break;
-
-    case 3:                               /* UDP/IPv6 */
-      if (length < 18)
-	return PFCP_CAUSE_INVALID_LENGTH;
-      get_ip46_ip6(v->addr, data);
-      v->port = get_u16(data);
-
-      pfcp_debug ("PFCP: Outer Header Creation UDP/IPv6, IP:%U,Port:%d.",
-		    format_ip46_address, &v->addr, IP46_TYPE_ANY, v->port);
-      break;
+      pfcp_debug ("PFCP: invalid bit combination in Outer Header Creation: %04x.",
+		  v->description);
+      return PFCP_CAUSE_REQUEST_REJECTED;
     }
+
+  if (v->description & OUTER_HEADER_CREATION_GTP)
+    {
+      if (length < 4)
+	return PFCP_CAUSE_INVALID_LENGTH;
+      v->teid = get_u32(data);
+      length -= 4;
+    }
+
+  if (v->description & OUTER_HEADER_CREATION_IP4)
+    {
+      if (length < 4)
+	return PFCP_CAUSE_INVALID_LENGTH;
+      get_ip4(v->ip4, data);
+      length -= 4;
+    }
+
+  if (v->description & OUTER_HEADER_CREATION_IP6)
+    {
+      if (length < 16)
+	return PFCP_CAUSE_INVALID_LENGTH;
+      get_ip6(v->ip6, data);
+      length -= 16;
+    }
+
+  if (v->description & OUTER_HEADER_CREATION_UDP)
+    {
+      if (length < 2)
+	return PFCP_CAUSE_INVALID_LENGTH;
+      v->port = get_u16(data);
+    }
+
+  pfcp_debug ("PFCP: Outer Header Creation: %U", format_outer_header_creation, v);
 
   return 0;
 }
@@ -1916,42 +1979,21 @@ static int encode_outer_header_creation(void *p, u8 **vec)
 {
   pfcp_outer_header_creation_t *v = p;
 
-  put_u8(*vec, v->type);
+  pfcp_debug ("PFCP: Outer Header Creation: %U", format_outer_header_creation, v);
 
-  switch (v->type)
-    {
-    case 0:                               /* GTP-U/UDP/IPv4 */
-      pfcp_debug ("PFCP: Outer Header Creation GTP-U/UDP/IPv4, TEID:%08x,IP:%U.",
-		    v->teid, format_ip46_address, &v->addr, IP46_TYPE_ANY);
+  put_u16_little(*vec, v->description);
 
-      put_u32(*vec, v->teid);
-      put_ip46_ip4(*vec, v->addr);
-      break;
+  if (v->description & OUTER_HEADER_CREATION_GTP)
+    put_u32(*vec, v->teid);
 
-    case 1:                               /* GTP-U/UDP/IPv6 */
-      pfcp_debug ("PFCP: Outer Header Creation GTP-U/UDP/IPv6, TEID:%08x,IP:%U.",
-		    v->teid, format_ip46_address, &v->addr, IP46_TYPE_ANY);
+  if (v->description & OUTER_HEADER_CREATION_IP4)
+    put_ip4(*vec, v->ip4);
 
-      put_u32(*vec, v->teid);
-      put_ip46_ip6(*vec, v->addr);
-      break;
+  if (v->description & OUTER_HEADER_CREATION_IP6)
+    put_ip6(*vec, v->ip6);
 
-    case 2:                               /* UDP/IPv4 */
-      pfcp_debug ("PFCP: Outer Header Creation UDP/IPv4, IP:%U,Port:%d.",
-		    format_ip46_address, &v->addr, IP46_TYPE_ANY, v->port);
-
-      put_ip46_ip4(*vec, v->addr);
-      put_u16(*vec, v->port);
-      break;
-
-    case 3:                               /* UDP/IPv6 */
-      pfcp_debug ("PFCP: Outer Header Creation UDP/IPv6, IP:%U,Port:%d.",
-		    format_ip46_address, &v->addr, IP46_TYPE_ANY, v->port);
-
-      put_ip46_ip6(*vec, v->addr);
-      put_u16(*vec, v->port);
-      break;
-    }
+  if (v->description & OUTER_HEADER_CREATION_UDP)
+    put_u16(*vec, v->port);
 
   return 0;
 }

@@ -406,9 +406,23 @@ typedef u32 pfcp_linked_urr_id_t;
 
 #define PFCP_IE_OUTER_HEADER_CREATION			84
 typedef struct {
-  u8 type;
+  u16 description;
+#define OUTER_HEADER_CREATION_GTP_IP4			BIT(0)
+#define OUTER_HEADER_CREATION_GTP_IP6			BIT(1)
+#define OUTER_HEADER_CREATION_UDP_IP4			BIT(2)
+#define OUTER_HEADER_CREATION_UDP_IP6			BIT(3)
+#define OUTER_HEADER_CREATION_GTP		\
+  (OUTER_HEADER_CREATION_GTP_IP4 | OUTER_HEADER_CREATION_GTP_IP6)
+#define OUTER_HEADER_CREATION_UDP		\
+  (OUTER_HEADER_CREATION_UDP_IP4 | OUTER_HEADER_CREATION_UDP_IP6)
+#define OUTER_HEADER_CREATION_IP4		\
+  (OUTER_HEADER_CREATION_GTP_IP4 | OUTER_HEADER_CREATION_UDP_IP4)
+#define OUTER_HEADER_CREATION_IP6		\
+  (OUTER_HEADER_CREATION_GTP_IP6 | OUTER_HEADER_CREATION_UDP_IP6)
+
   u32 teid;
-  ip46_address_t addr;
+  ip4_address_t ip4;
+  ip6_address_t ip6;
   u16 port;
 } pfcp_outer_header_creation_t;
 
@@ -1607,10 +1621,12 @@ typedef struct
   pfcp_sxsrrsp_flags_t sxsrrsp_flags;
 } pfcp_session_report_response_t;
 
+u8 * format_flags(u8 * s, va_list * args);
 u8 * format_network_instance(u8 * s, va_list * args);
 u8 * format_pfcp_msg_hdr(u8 * s, va_list * args);
 u8 * format_user_plane_ip_resource_information(u8 * s, va_list * args);
 u8 * format_node_id(u8 * s, va_list * args);
+u8 * format_outer_header_creation(u8 * s, va_list * args);
 
 int pfcp_decode_msg(u16 type, u8 *p, int len, struct pfcp_group *grp);
 int pfcp_encode_msg(u16 type, struct pfcp_group *grp, u8 **vec);
