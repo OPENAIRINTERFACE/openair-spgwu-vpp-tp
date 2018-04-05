@@ -1904,6 +1904,13 @@ static const char *urr_method_flags[] = {
   NULL
 };
 
+static const char * source_intf_name[] = {
+  "Access",
+  "Core",
+  "SGi-LAN",
+  "CP-function"
+};
+
 u8 *
 format_sx_session(u8 * s, va_list * args)
 {
@@ -1937,6 +1944,11 @@ format_sx_session(u8 * s, va_list * args)
 	       pdr->id, pdr,
 	       pdr->precedence,
 	       pdr->pdi.fields);
+
+    if (pdr->pdi.src_intf < ARRAY_LEN (source_intf_name))
+      s = format(s, "    Source Interface: %s\n", source_intf_name[pdr->pdi.src_intf]);
+    else
+      s = format(s, "    Source Interface: %d\n", pdr->pdi.src_intf);
 
     s = format(s, "    Network Instance: %U\n",
 	       format_network_instance, nwi ? nwi->name : NULL);
