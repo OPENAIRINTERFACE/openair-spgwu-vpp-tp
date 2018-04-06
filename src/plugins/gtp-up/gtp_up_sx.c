@@ -589,36 +589,27 @@ const fib_node_vft_t gtp_up_vft = {
   .fnv_back_walk = gtp_up_peer_back_walk,
 };
 
-static u32 nwi_to_vrf(uword nwi)
-{
-  gtp_up_main_t *gtm = &gtp_up_main;
-  gtp_up_nwi_t * n;
-
-  if (!pool_is_free_index (gtm->nwis, nwi))
-    {
-      n = pool_elt_at_index (gtm->nwis, nwi);
-      return n->vrf;
-    }
-
-  return 0;
-}
-
 static uword
-peer_addr_ref (void * ip, uword nwi, int is_ip4)
+peer_addr_ref (const gtp_up_far_forward_t * fwd)
 {
+  u8 is_ip4 = !!(fwd->outer_header_creation.description & OUTER_HEADER_CREATION_IP4);
   gtp_up_main_t *gtm = &gtp_up_main;
   ip46_address_fib_t key;
-  u32 encap_fib_index;
   gtp_up_peer_t * p;
   uword *peer;
-  u32 vrf;
-
-  vrf = nwi_to_vrf(nwi);
-  encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
   memset(&key, 0, sizeof(key));
-  ip_set(&key.addr, ip, is_ip4);
-  key.fib_index = encap_fib_index;
+
+  if (is_ip4)
+    {
+      ip46_address_set_ip4(&key.addr, &fwd->outer_header_creation.ip4);
+      key.fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+    }
+  else
+    {
+      key.addr.ip6 = fwd->outer_header_creation.ip6;
+      key.fib_index = vec_elt (ip6_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+    }
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
   if (peer)
@@ -631,7 +622,7 @@ peer_addr_ref (void * ip, uword nwi, int is_ip4)
   pool_get_aligned (gtm->peers, p, CLIB_CACHE_LINE_BYTES);
   memset (p, 0, sizeof (*p));
   p->ref_cnt = 1;
-  p->encap_fib_index = encap_fib_index;
+  p->encap_fib_index = key.fib_index;
 
   if (is_ip4)
     {
@@ -661,21 +652,26 @@ peer_addr_ref (void * ip, uword nwi, int is_ip4)
 }
 
 static uword
-peer_addr_unref (void * ip, uword nwi, int is_ip4)
+peer_addr_unref (const gtp_up_far_forward_t * fwd)
 {
+  u8 is_ip4 = !!(fwd->outer_header_creation.description & OUTER_HEADER_CREATION_IP4);
   gtp_up_main_t *gtm = &gtp_up_main;
   ip46_address_fib_t key;
-  u32 encap_fib_index;
   gtp_up_peer_t * p;
   uword *peer;
-  u32 vrf;
-
-  vrf = nwi_to_vrf(nwi);
-  encap_fib_index = fib_table_find (is_ip4 ? FIB_PROTOCOL_IP4 : FIB_PROTOCOL_IP6, vrf);
 
   memset(&key, 0, sizeof(key));
-  ip_set(&key.addr, ip, is_ip4);
-  key.fib_index = encap_fib_index;
+
+  if (is_ip4)
+    {
+      ip46_address_set_ip4(&key.addr, &fwd->outer_header_creation.ip4);
+      key.fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+    }
+  else
+    {
+      key.addr.ip6 = fwd->outer_header_creation.ip6;
+      key.fib_index = vec_elt (ip6_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+    }
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
   ASSERT (peer);
@@ -763,14 +759,8 @@ static void sx_free_rules(gtp_up_session_t *sx, int rule)
   vec_foreach (far, rules->far)
     {
       if (far->forward.outer_header_creation.description != 0)
-	{
-	  if (far->forward.outer_header_creation.description
-	      & OUTER_HEADER_CREATION_IP4)
-	    peer_addr_unref(&far->forward.outer_header_creation.ip4, far->forward.nwi, 1);
-	  else if (far->forward.outer_header_creation.description
-		   & OUTER_HEADER_CREATION_IP6)
-	    peer_addr_unref(&far->forward.outer_header_creation.ip6, far->forward.nwi, 0);
-	}
+	peer_addr_unref(&far->forward);
+
       vec_free(far->forward.rewrite);
     }
   vec_free(rules->far);
@@ -1741,14 +1731,7 @@ int sx_update_apply(gtp_up_session_t *sx)
       vec_foreach (far, pending->far)
 	if (far->forward.outer_header_creation.description != 0)
 	  {
-	    if (far->forward.outer_header_creation.description
-		& OUTER_HEADER_CREATION_IP4)
-	      far->forward.peer_idx =
-		peer_addr_ref(&far->forward.outer_header_creation.ip4, far->forward.nwi, 1);
-	    else if (far->forward.outer_header_creation.description
-		     & OUTER_HEADER_CREATION_IP6)
-	      far->forward.peer_idx =
-		peer_addr_ref(&far->forward.outer_header_creation.ip6, far->forward.nwi, 0);
+	    far->forward.peer_idx = peer_addr_ref(&far->forward);
 
 	    if (far->forward.outer_header_creation.description
 		& OUTER_HEADER_CREATION_GTP_IP4)

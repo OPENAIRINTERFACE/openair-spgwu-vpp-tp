@@ -113,7 +113,7 @@ VLIB_CLI_COMMAND (gtp_up_enable_disable_command, static) =
 };
 /* *INDENT-ON* */
 
-int vnet_gtp_up_nwi_add_del(u8 * name, u32 vrf, u8 add)
+int vnet_gtp_up_nwi_add_del(u8 * name, u8 add)
 {
   gtp_up_main_t * gtm = &gtp_up_main;
   gtp_up_nwi_t * nwi;
@@ -130,7 +130,7 @@ int vnet_gtp_up_nwi_add_del(u8 * name, u32 vrf, u8 add)
       memset (nwi, 0, sizeof (*nwi));
 
       nwi->name = vec_dup(name);
-      nwi->vrf = vrf;
+
       for (int i = 0; i < ARRAY_LEN(nwi->intf_sw_if_index); i++)
 	nwi->intf_sw_if_index[i] = ~0;
 
@@ -195,7 +195,6 @@ gtp_up_nwi_add_del_command_fn (vlib_main_t * vm,
 {
   unformat_input_t _line_input, *line_input = &_line_input;
   clib_error_t * error = NULL;
-  u32 vrf = 0;
   u8 *name = NULL;
   u8 *label = NULL;
   u8 add = 1;
@@ -214,8 +213,6 @@ gtp_up_nwi_add_del_command_fn (vlib_main_t * vm,
 	;
       else if (unformat (line_input, "label %_%v%_", &label))
 	;
-      else if (unformat (line_input, "vrf %d", &vrf))
-	;
       else {
 	error = unformat_parse_error (line_input);
 	goto done;
@@ -228,7 +225,7 @@ gtp_up_nwi_add_del_command_fn (vlib_main_t * vm,
   if (!name)
     name = gtp_up_name_to_labels(label);
 
-  rv = vnet_gtp_up_nwi_add_del(name, vrf, add);
+  rv = vnet_gtp_up_nwi_add_del(name, add);
 
   switch (rv)
     {
@@ -261,7 +258,7 @@ VLIB_CLI_COMMAND (gtp_up_nwi_add_del_command, static) =
 {
   .path = "gtp-up nwi create",
   .short_help =
-  "gtp-up nwi create [name <name> | dns <label>] [vrf <vrf>]",
+  "gtp-up nwi create [name <name> | dns <label>]",
   .function = gtp_up_nwi_add_del_command_fn,
 };
 /* *INDENT-ON* */
@@ -663,7 +660,7 @@ gtp_up_show_nwi_command_fn (vlib_main_t * vm,
       if (name && !vec_is_equal(name, nwi->name))
 	continue;
 
-      vlib_cli_output (vm, "%U: vrf: %d", format_network_instance, nwi->name, nwi->vrf);
+      vlib_cli_output (vm, "%U", format_network_instance, nwi->name);
       vlib_cli_output (vm, "  Access: %U", format_vnet_sw_if_index_name,
 		       vnm, nwi->intf_sw_if_index[INTF_ACCESS]);
       vlib_cli_output (vm, "  Core: %U", format_vnet_sw_if_index_name,
@@ -679,7 +676,7 @@ gtp_up_show_nwi_command_fn (vlib_main_t * vm,
 
       pool_foreach (ip_res, nwi->ip_res,
 	({
-	  vlib_cli_output (vm, "  [%d]: vrf: %U, teid: 0x%08x/%d (0x%08x)",
+	  vlib_cli_output (vm, "  [%d]: IP: %U, teid: 0x%08x/%d (0x%08x)",
 			   ip_res - nwi->ip_res,
 			   format_ip46_address, &ip_res->ip, IP46_TYPE_ANY,
 			   ip_res->teid, __builtin_popcount(ip_res->mask),

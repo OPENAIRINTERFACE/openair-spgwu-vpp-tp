@@ -403,7 +403,6 @@ typedef struct {
 
 typedef struct {
   u8 * name;
-  u32 vrf;
 
   u32 intf_sw_if_index[INTF_NUM];
   gtp_up_nwi_ip_res_t * ip_res;
