@@ -1585,7 +1585,16 @@ static int build_sx_sdf(gtp_up_session_t *sx)
   vec_foreach (pdr, pending->pdr) {
     printf("PDR Scan: %d\n", pdr->id);
 
-    if (pdr->pdi.fields & F_PDI_UE_IP_ADDR)
+    /*
+     * From 3GPP TS 29.244 version 14.3.0, Table 7.5.2.2-2
+     *
+     * NOTE 2: When a Local F-TEID is provisioned in the PDI, the
+     *         Network Instance shall relate to the IP address of
+     *         the F-TEID. Otherwise, the Network Instance shall
+     *         relate to the UE IP address.
+     */
+    if (!(pdr->pdi.fields & F_PDI_LOCAL_F_TEID) &&
+	pdr->pdi.fields & F_PDI_UE_IP_ADDR)
       {
 	ip46_address_fib_t *vrf_ip;
 
@@ -1596,12 +1605,7 @@ static int build_sx_sdf(gtp_up_session_t *sx)
 	    vec_alloc(pending->vrf_ip, 1);
 	    vrf_ip = vec_end(pending->vrf_ip);
 	    ip46_address_set_ip4(&vrf_ip->addr, &pdr->pdi.ue_addr.ip4);
-	    vrf_ip->fib_index = 0;
-
-/* TODO: nw instance
-	if (pdr->pdi.fields & F_PDI_NW_INSTANCE)
-	  vrf_ip->fib_index = pdr->pdi.nw_instance;
-*/
+	    vrf_ip->fib_index = pdr->pdi.src_sw_if_index;
 
 	    _vec_len(pending->vrf_ip)++;
 	  }
@@ -1613,12 +1617,7 @@ static int build_sx_sdf(gtp_up_session_t *sx)
 	    vec_alloc(pending->vrf_ip, 1);
 	    vrf_ip = vec_end(pending->vrf_ip);
 	    vrf_ip->addr.ip6 = pdr->pdi.ue_addr.ip6;
-	    vrf_ip->fib_index = 0;
-
-/* TODO: nw instance
-	if (pdr->pdi.fields & F_PDI_NW_INSTANCE)
-	  vrf_ip->fib_index = pdr->pdi.nw_instance;
-*/
+	    vrf_ip->fib_index = pdr->pdi.src_sw_if_index;
 
 	    _vec_len(pending->vrf_ip)++;
 	  }
