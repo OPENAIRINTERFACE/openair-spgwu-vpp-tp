@@ -402,7 +402,7 @@ gtp_up_ip6_classify (vlib_main_t * vm,
 
 VLIB_REGISTER_NODE (gtp_up_ip4_classify_node) = {
   .function = gtp_up_ip4_classify,
-  .name = "gtp_up-ip4-classify",
+  .name = "gtp-up-ip4-classify",
   .vector_size = sizeof (u32),
   .format_trace = format_gtp_up_classify_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -420,7 +420,7 @@ VLIB_NODE_FUNCTION_MULTIARCH (gtp_up_ip4_classify_node, gtp_up_ip4_classify)
 
 VLIB_REGISTER_NODE (gtp_up_ip6_classify_node) = {
   .function = gtp_up_ip6_classify,
-  .name = "gtp_up-ip6-classify",
+  .name = "gtp-up-ip6-classify",
   .vector_size = sizeof (u32),
   .format_trace = format_gtp_up_classify_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,

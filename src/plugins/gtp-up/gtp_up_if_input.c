@@ -49,8 +49,8 @@ typedef enum {
 
 #define foreach_gtp_up_if_input_next		\
   _(DROP, "error-drop")				\
-  _(IP4_CLASSIFY, "gtp_up-ip4-classify")		\
-  _(IP6_CLASSIFY, "gtp_up-ip6-classify")
+  _(IP4_CLASSIFY, "gtp-up-ip4-classify")		\
+  _(IP6_CLASSIFY, "gtp-up-ip6-classify")
 
 typedef enum {
 #define _(s,n) GTP_UP_IF_INPUT_NEXT_##s,
@@ -196,7 +196,7 @@ gtp_up_if_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * fr
 
 VLIB_REGISTER_NODE (gtp_up_if_input_node) = {
   .function = gtp_up_if_input,
-  .name = "gtp_up-if-input",
+  .name = "gtp-up-if-input",
   .vector_size = sizeof (u32),
   .format_trace = format_gtp_up_if_input_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,

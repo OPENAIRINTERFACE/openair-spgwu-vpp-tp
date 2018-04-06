@@ -28,8 +28,8 @@ vlib_node_registration_t gtpu6_input_node;
 
 #define foreach_gtpu_input_next        \
   _(DROP, "error-drop")		       \
-  _(IP4_CLASSIFY, "gtp_up-ip4-classify")	\
-  _(IP6_CLASSIFY, "gtp_up-ip6-classify")	\
+  _(IP4_CLASSIFY, "gtp-up-ip4-classify")	\
+  _(IP6_CLASSIFY, "gtp-up-ip6-classify")	\
   _(ERROR_INDICATION, "gtp-error-indication")
 
 typedef enum
