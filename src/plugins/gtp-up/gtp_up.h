@@ -82,6 +82,8 @@ typedef struct
 #define GTPU_V1_VER   (1<<5)
 
 #define GTPU_PT_GTP    (1<<4)
+#define GTPU_TYPE_ECHO_REQUEST  1
+#define GTPU_TYPE_ECHO_RESPONSE 2
 #define GTPU_TYPE_ERROR_IND    26
 #define GTPU_TYPE_END_MARKER  254
 #define GTPU_TYPE_GTPU  255
