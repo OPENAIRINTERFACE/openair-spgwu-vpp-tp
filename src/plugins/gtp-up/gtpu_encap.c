@@ -817,7 +817,7 @@ gtp_up6_encap (vlib_main_t * vm,
 
 VLIB_REGISTER_NODE (gtp_up4_encap_node) = {
   .function = gtp_up4_encap,
-  .name = "gtp_up4-encap",
+  .name = "gtp-up4-encap",
   .vector_size = sizeof (u32),
   .format_trace = format_gtp_up_encap_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -835,7 +835,7 @@ VLIB_NODE_FUNCTION_MULTIARCH (gtp_up4_encap_node, gtp_up4_encap)
 
 VLIB_REGISTER_NODE (gtp_up6_encap_node) = {
   .function = gtp_up6_encap,
-  .name = "gtp_up6-encap",
+  .name = "gtp-up6-encap",
   .vector_size = sizeof (u32),
   .format_trace = format_gtp_up_encap_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,

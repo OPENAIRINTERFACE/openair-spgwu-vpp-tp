@@ -47,19 +47,11 @@ typedef enum {
     GTP_UP_CLASSIFY_N_ERROR,
 } gtp_up_classify_error_t;
 
-#define foreach_gtp_up_classify_next	\
-  _(DROP, "error-drop")			\
-  _(GTP_UP4_ENCAP, "gtp_up4-encap")       \
-  _(GTP_UP6_ENCAP, "gtp_up6-encap")	\
-  _(IP4_INPUT, "ip4-input")		\
-  _(IP6_INPUT, "ip6-input")
-
 typedef enum {
   GTP_UP_CLASSIFY_NEXT_DROP,
-  GTP_UP_CLASSIFY_NEXT_GTP_UP4_ENCAP,
-  GTP_UP_CLASSIFY_NEXT_GTP_UP6_ENCAP,
-  GTP_UP_CLASSIFY_NEXT_IP4_INPUT,
-  GTP_UP_CLASSIFY_NEXT_IP6_INPUT,
+  GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP,
+  GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP,
+  GTP_UP_CLASSIFY_NEXT_IP_INPUT,
   GTP_UP_CLASSIFY_N_NEXT,
 } gtp_up_classify_next_t;
 
@@ -297,12 +289,12 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      if (far->forward.outer_header_creation.description
 		  & OUTER_HEADER_CREATION_GTP_IP4)
 		{
-		  next = GTP_UP_CLASSIFY_NEXT_GTP_UP4_ENCAP;
+		  next = GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP;
 		}
 	      else if (far->forward.outer_header_creation.description
 		       & OUTER_HEADER_CREATION_GTP_IP6)
 		{
-		  next = GTP_UP_CLASSIFY_NEXT_GTP_UP6_ENCAP;
+		  next = GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP;
 		}
 	      else if (far->forward.outer_header_creation.description
 		       & OUTER_HEADER_CREATION_UDP_IP4)
@@ -320,10 +312,7 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		}
 	      else
 		{
-		  ip4 = (ip4_header_t *)vlib_buffer_get_current(b);
-		  next = ((ip4->ip_version_and_header_length & 0xF0) == 0x40) ?
-		    GTP_UP_CLASSIFY_NEXT_IP4_INPUT : GTP_UP_CLASSIFY_NEXT_IP6_INPUT;
-
+		  next = GTP_UP_CLASSIFY_NEXT_IP_INPUT;
 		  vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
 		}
 
@@ -410,9 +399,10 @@ VLIB_REGISTER_NODE (gtp_up_ip4_classify_node) = {
   .error_strings = gtp_up_classify_error_strings,
   .n_next_nodes = GTP_UP_CLASSIFY_N_NEXT,
   .next_nodes = {
-#define _(s,n) [GTP_UP_CLASSIFY_NEXT_##s] = n,
-    foreach_gtp_up_classify_next
-#undef _
+    [GTP_UP_CLASSIFY_NEXT_DROP]          = "error-drop",
+    [GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP] = "gtp-up4-encap",
+    [GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP] = "gtp-up6-encap",
+    [GTP_UP_CLASSIFY_NEXT_IP_INPUT]      = "ip4-input",
   },
 };
 
@@ -428,9 +418,10 @@ VLIB_REGISTER_NODE (gtp_up_ip6_classify_node) = {
   .error_strings = gtp_up_classify_error_strings,
   .n_next_nodes = GTP_UP_CLASSIFY_N_NEXT,
   .next_nodes = {
-#define _(s,n) [GTP_UP_CLASSIFY_NEXT_##s] = n,
-    foreach_gtp_up_classify_next
-#undef _
+    [GTP_UP_CLASSIFY_NEXT_DROP]          = "error-drop",
+    [GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP] = "gtp-up4-encap",
+    [GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP] = "gtp-up6-encap",
+    [GTP_UP_CLASSIFY_NEXT_IP_INPUT]      = "ip6-input",
   },
 };
 
