@@ -49,7 +49,7 @@ int gtp_up_enable_disable (gtp_up_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
 
-  vnet_feature_enable_disable ("device-input", "gtp_up",
+  vnet_feature_enable_disable ("device-input", "gtp-up",
 			       sw_if_index, enable_disable, 0, 0);
 
   return rv;
@@ -776,7 +776,7 @@ VLIB_CLI_COMMAND (gtp_up_show_session_command, static) =
 static clib_error_t * gtp_up_init (vlib_main_t * vm)
 {
   gtp_up_main_t * sm = &gtp_up_main;
-  char *argv[] = { "gtp_up", "--no-huge", "--no-pci", NULL };
+  char *argv[] = { "gtp-up", "--no-huge", "--no-pci", NULL };
   int ret;
 
   sm->vnet_main = vnet_get_main ();
@@ -824,7 +824,7 @@ VLIB_INIT_FUNCTION (gtp_up_init);
 VNET_FEATURE_INIT (gtp_up, static) =
 {
   .arc_name = "device-input",
-  .node_name = "gtp_up",
+  .node_name = "gtp-up",
   .runs_before = VNET_FEATURES ("ethernet-input"),
 };
 /* *INDENT-ON */
