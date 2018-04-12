@@ -26,19 +26,13 @@
 vlib_node_registration_t gtpu4_input_node;
 vlib_node_registration_t gtpu6_input_node;
 
-#define foreach_gtpu_input_next				\
-  _(DROP, "error-drop")					\
-  _(IP4_CLASSIFY, "gtp-up-ip4-classify")		\
-  _(IP6_CLASSIFY, "gtp-up-ip6-classify")		\
-  _(ERROR_INDICATION, "gtp-error-indication")		\
-  _(IP4_ECHO_REQUEST, "gtp-up-ip4-echo-request")	\
-  _(IP6_ECHO_REQUEST, "gtp-up-ip6-echo-request")
-
 typedef enum
 {
-#define _(s,n) GTPU_INPUT_NEXT_##s,
-  foreach_gtpu_input_next
-#undef _
+  GTPU_INPUT_NEXT_DROP,
+  GTPU_INPUT_NEXT_IP4_CLASSIFY,
+  GTPU_INPUT_NEXT_IP6_CLASSIFY,
+  GTPU_INPUT_NEXT_ERROR_INDICATION,
+  GTPU_INPUT_NEXT_ECHO_REQUEST,
   GTPU_INPUT_N_NEXT,
 } gtpu_input_next_t;
 
@@ -191,8 +185,7 @@ gtpu_input (vlib_main_t * vm,
 		  break;
 
 		case GTPU_TYPE_ECHO_REQUEST:
-		  next0 = is_ip4 ? GTPU_INPUT_NEXT_IP4_ECHO_REQUEST
-		    : GTPU_INPUT_NEXT_IP6_ECHO_REQUEST;
+		  next0 = GTPU_INPUT_NEXT_ECHO_REQUEST;
 		  break;
 
 		case GTPU_TYPE_ECHO_RESPONSE:
@@ -351,8 +344,7 @@ gtpu_input (vlib_main_t * vm,
 		  break;
 
 		case GTPU_TYPE_ECHO_REQUEST:
-		  next0 = is_ip4 ? GTPU_INPUT_NEXT_IP4_ECHO_REQUEST
-		    : GTPU_INPUT_NEXT_IP6_ECHO_REQUEST;
+		  next0 = GTPU_INPUT_NEXT_ECHO_REQUEST;
 		  break;
 
 		case GTPU_TYPE_ECHO_RESPONSE:
@@ -559,8 +551,7 @@ gtpu_input (vlib_main_t * vm,
 		  break;
 
 		case GTPU_TYPE_ECHO_REQUEST:
-		  next0 = is_ip4 ? GTPU_INPUT_NEXT_IP4_ECHO_REQUEST
-		    : GTPU_INPUT_NEXT_IP6_ECHO_REQUEST;
+		  next0 = GTPU_INPUT_NEXT_ECHO_REQUEST;
 		  break;
 
 		case GTPU_TYPE_ECHO_RESPONSE:
@@ -761,9 +752,11 @@ VLIB_REGISTER_NODE (gtpu4_input_node) = {
 
   .n_next_nodes = GTPU_INPUT_N_NEXT,
   .next_nodes = {
-#define _(s,n) [GTPU_INPUT_NEXT_##s] = n,
-    foreach_gtpu_input_next
-#undef _
+    [GTPU_INPUT_NEXT_DROP]             = "error-drop",
+    [GTPU_INPUT_NEXT_IP4_CLASSIFY]     = "gtp-up-ip4-classify",
+    [GTPU_INPUT_NEXT_IP6_CLASSIFY]     = "gtp-up-ip6-classify",
+    [GTPU_INPUT_NEXT_ERROR_INDICATION] = "gtp-error-indication",
+    [GTPU_INPUT_NEXT_ECHO_REQUEST]     = "gtp-up-ip4-echo-request",
   },
 
 //temp  .format_buffer = format_gtpu_header,
@@ -784,9 +777,11 @@ VLIB_REGISTER_NODE (gtpu6_input_node) = {
 
   .n_next_nodes = GTPU_INPUT_N_NEXT,
   .next_nodes = {
-#define _(s,n) [GTPU_INPUT_NEXT_##s] = n,
-    foreach_gtpu_input_next
-#undef _
+    [GTPU_INPUT_NEXT_DROP]             = "error-drop",
+    [GTPU_INPUT_NEXT_IP4_CLASSIFY]     = "gtp-up-ip4-classify",
+    [GTPU_INPUT_NEXT_IP6_CLASSIFY]     = "gtp-up-ip6-classify",
+    [GTPU_INPUT_NEXT_ERROR_INDICATION] = "gtp-error-indication",
+    [GTPU_INPUT_NEXT_ECHO_REQUEST]     = "gtp-up-ip6-echo-request",
   },
 
 //temp  .format_buffer = format_gtpu_header,
