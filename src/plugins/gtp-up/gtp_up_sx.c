@@ -1980,15 +1980,20 @@ format_sx_session(u8 * s, va_list * args)
 	       far->id, far->apply_action,
 	       format_flags, far->apply_action, apply_action_flags);
 
-    if (far->apply_action & FAR_FORWARD) {
-      s = format(s, "  Forward:\n"
-		 "    Network Instance: %U\n"
-		 "    Destination Interface: %u\n"
-		 "    Outer Header Creation: %U\n",
-		 format_network_instance, nwi ? nwi->name : NULL,
-		 far->forward.dst_intf,
-		 format_outer_header_creation, &far->forward.outer_header_creation);
-    }
+    if (far->apply_action & FAR_FORWARD)
+      {
+	s = format(s, "  Forward:\n"
+		   "    Network Instance: %U\n"
+		   "    Destination Interface: %u\n",
+		   format_network_instance, nwi ? nwi->name : NULL,
+		   far->forward.dst_intf);
+	if (far->forward.flags & FAR_F_REDIRECT_INFORMATION)
+	  s = format(s, "    Redirect Information: %U\n",
+		     format_redirect_information, &far->forward.redirect_information);
+	if (far->forward.flags & FAR_F_OUTER_HEADER_CREATION)
+	  s = format(s, "    Outer Header Creation: %U\n",
+		     format_outer_header_creation, &far->forward.outer_header_creation);
+      }
   }
 
   vec_foreach (urr, rules->urr)

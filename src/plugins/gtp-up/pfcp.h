@@ -231,7 +231,18 @@ typedef u32 pfcp_inactivity_detection_time_t;
 typedef u32 pfcp_reporting_triggers_t;
 
 #define PFCP_IE_REDIRECT_INFORMATION			38
-typedef u32 pfcp_redirect_information_t;
+typedef struct {
+  u8 type;
+#define REDIRECT_INFORMATION_IPv4 0
+#define REDIRECT_INFORMATION_IPv6 1
+#define REDIRECT_INFORMATION_HTTP 2
+#define REDIRECT_INFORMATION_SIP  3
+
+  union {
+    ip46_address_t ip;
+    u8 *uri;
+  };
+} pfcp_redirect_information_t;
 
 #define PFCP_IE_REPORT_TYPE				39
 typedef u8 pfcp_report_type_t;
@@ -1625,8 +1636,13 @@ u8 * format_flags(u8 * s, va_list * args);
 u8 * format_network_instance(u8 * s, va_list * args);
 u8 * format_pfcp_msg_hdr(u8 * s, va_list * args);
 u8 * format_user_plane_ip_resource_information(u8 * s, va_list * args);
+u8 * format_redirect_information(u8 * s, va_list * args);
 u8 * format_node_id(u8 * s, va_list * args);
 u8 * format_outer_header_creation(u8 * s, va_list * args);
+
+void cpy_redirect_information(pfcp_redirect_information_t *dst,
+			      pfcp_redirect_information_t *src);
+void free_redirect_information(void *p);
 
 int pfcp_decode_msg(u16 type, u8 *p, int len, struct pfcp_group *grp);
 int pfcp_encode_msg(u16 type, struct pfcp_group *grp, u8 **vec);

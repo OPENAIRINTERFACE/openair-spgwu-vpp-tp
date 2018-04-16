@@ -2745,7 +2745,7 @@ tcp46_listen_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  child0 =
 	    tcp_lookup_connection (lc0->c_fib_index, b0, my_thread_index,
 				   is_ip4);
-	  if (PREDICT_FALSE (child0->state != TCP_STATE_LISTEN))
+	  if (PREDICT_FALSE (child0 && child0->state != TCP_STATE_LISTEN))
 	    {
 	      error0 = TCP_ERROR_CREATE_EXISTS;
 	      goto drop;
@@ -2797,6 +2797,8 @@ tcp46_listen_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	    << child0->snd_wscale;
 	  child0->snd_wl1 = vnet_buffer (b0)->tcp.seq_number;
 	  child0->snd_wl2 = vnet_buffer (b0)->tcp.ack_number;
+
+	  clib_memcpy (&child0->connection.b2, vnet_buffer2(b0), sizeof(child0->connection.b2));
 
 	  tcp_connection_init_vars (child0);
 	  TCP_EVT_DBG (TCP_EVT_SYN_RCVD, child0, 1);
@@ -3017,6 +3019,12 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	  vnet_buffer (b0)->tcp.hdr_offset = (u8 *) tcp0
 	    - (u8 *) vlib_buffer_get_current (b0);
+
+	  /* no Session */
+	  if (PREDICT_FALSE (0 == tconn &&
+			     (vnet_buffer2 (b0)->connection_index & 0x80000000) != 0))
+	    tconn = tp_vfts[TRANSPORT_PROTO_TCP].get_listener
+	      (vnet_buffer2 (b0)->connection_index & ~0x80000000);
 
 	  /* Session exists */
 	  if (PREDICT_TRUE (0 != tconn))

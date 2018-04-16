@@ -1120,10 +1120,20 @@ static int handle_create_far(gtp_up_session_t *sess, pfcp_create_far_t *create_f
 	    }
 	  create->forward.dst_intf = far->forwarding_parameters.destination_interface;
 
-	  //TODO: redirect_information
+	  if (ISSET_BIT(far->forwarding_parameters.grp.fields,
+			FORWARDING_PARAMETERS_REDIRECT_INFORMATION))
+	    {
+	      create->forward.flags |= FAR_F_REDIRECT_INFORMATION;
+	      cpy_redirect_information
+		(&create->forward.redirect_information,
+		 &far->forwarding_parameters.redirect_information);
+
+	    }
+
 	  if (ISSET_BIT(far->forwarding_parameters.grp.fields,
 			FORWARDING_PARAMETERS_OUTER_HEADER_CREATION))
 	    {
+	      create->forward.flags |= FAR_F_OUTER_HEADER_CREATION;
 	      create->forward.outer_header_creation =
 		far->forwarding_parameters.outer_header_creation;
 
@@ -1212,7 +1222,16 @@ static int handle_update_far(gtp_up_session_t *sess, pfcp_update_far_t *update_f
 	    }
 	  update->forward.dst_intf = far->update_forwarding_parameters.destination_interface;
 
-	  //TODO: redirect_information
+	  if (ISSET_BIT(far->update_forwarding_parameters.grp.fields,
+			UPDATE_FORWARDING_PARAMETERS_REDIRECT_INFORMATION))
+	    {
+	      update->forward.flags |= FAR_F_REDIRECT_INFORMATION;
+	      free_redirect_information(&update->forward.redirect_information);
+	      cpy_redirect_information
+		(&update->forward.redirect_information,
+		 &far->update_forwarding_parameters.redirect_information);
+	    }
+
 	  if (ISSET_BIT(far->update_forwarding_parameters.grp.fields,
 			UPDATE_FORWARDING_PARAMETERS_OUTER_HEADER_CREATION))
 	    {
@@ -1221,6 +1240,7 @@ static int handle_update_far(gtp_up_session_t *sess, pfcp_update_far_t *update_f
 		  far->update_forwarding_parameters.sxsmreq_flags & SXSMREQ_SNDEM)
 		sx_send_end_marker(sess, far->far_id);
 
+	      update->forward.flags |= FAR_F_OUTER_HEADER_CREATION;
 	      update->forward.outer_header_creation =
 		far->update_forwarding_parameters.outer_header_creation;
 

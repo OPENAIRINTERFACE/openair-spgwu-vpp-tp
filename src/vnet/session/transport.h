@@ -54,6 +54,8 @@ typedef struct _transport_connection
   /*fib_node_index_t rmt_fei;
      dpo_id_t rmt_dpo; */
 
+  vnet_buffer_opaque2_t b2;
+
 #if TRANSPORT_DEBUG
   elog_track_t elog_track;	/**< Event logging */
   u32 cc_stat_tstamp;		/**< CC stats timestamp */

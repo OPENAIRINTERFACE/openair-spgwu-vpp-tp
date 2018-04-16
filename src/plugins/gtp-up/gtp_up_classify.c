@@ -29,6 +29,7 @@
 
 #include <gtp-up/gtp_up.h>
 #include <gtp-up/gtp_up_sx.h>
+#include <gtp-up/gtp_up_http_redirect_server.h>
 
 /* Statistics (not all errors) */
 #define foreach_gtp_up_classify_error    \
@@ -52,6 +53,7 @@ typedef enum {
   GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP,
   GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP,
   GTP_UP_CLASSIFY_NEXT_IP_INPUT,
+  GTP_UP_CLASSIFY_NEXT_IP_LOCAL,
   GTP_UP_CLASSIFY_N_NEXT,
 } gtp_up_classify_next_t;
 
@@ -80,7 +82,7 @@ u8 * format_gtp_up_classify_trace (u8 * s, va_list * args)
 
 static uword
 gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
-		vlib_frame_t * from_frame, int is_ip4)
+		 vlib_frame_t * from_frame, int is_ip4)
 {
   u32 n_left_from, next_index, * from, * to_next;
   gtp_up_main_t * gtm = &gtp_up_main;
@@ -284,36 +286,60 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		  break;
 		}
 
-	      ip4 = (ip4_header_t *)pl;
-
-	      if (far->forward.outer_header_creation.description
-		  & OUTER_HEADER_CREATION_GTP_IP4)
+	      if (PREDICT_TRUE (far->apply_action & FAR_FORWARD))
 		{
-		  next = GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP;
+		  if (far->forward.flags & FAR_F_OUTER_HEADER_CREATION)
+		    {
+		      if (far->forward.outer_header_creation.description
+			  & OUTER_HEADER_CREATION_GTP_IP4)
+			{
+			  next = GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP;
+			}
+		      else if (far->forward.outer_header_creation.description
+			       & OUTER_HEADER_CREATION_GTP_IP6)
+			{
+			  next = GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP;
+			}
+		      else if (far->forward.outer_header_creation.description
+			       & OUTER_HEADER_CREATION_UDP_IP4)
+			{
+			  next = GTP_UP_CLASSIFY_NEXT_DROP;
+			  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
+			  goto trace;
+			}
+		      else if (far->forward.outer_header_creation.description
+			       & OUTER_HEADER_CREATION_UDP_IP6)
+			{
+			  next = GTP_UP_CLASSIFY_NEXT_DROP;
+			  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
+			  goto trace;
+			}
+		    }
+		  else if (far->forward.flags & FAR_F_REDIRECT_INFORMATION)
+		    {
+		      vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
+		      u32 fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index,
+					       far->forward.dst_sw_if_index);
+		      vnet_buffer2 (b)->gtpu.session_index = sidx;
+		      vnet_buffer2 (b)->gtpu.far_index = (far - active->far) | 0x80000000;
+		      vnet_buffer2 (b)->connection_index =
+			      gtp_up_http_redirect_session(fib_index, 1);
+		      next = GTP_UP_CLASSIFY_NEXT_IP_LOCAL;
+		    }
+		  else
+		    {
+		      next = GTP_UP_CLASSIFY_NEXT_IP_INPUT;
+		      vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
+		    }
 		}
-	      else if (far->forward.outer_header_creation.description
-		       & OUTER_HEADER_CREATION_GTP_IP6)
-		{
-		  next = GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP;
-		}
-	      else if (far->forward.outer_header_creation.description
-		       & OUTER_HEADER_CREATION_UDP_IP4)
+	      else if (far->apply_action & FAR_BUFFER)
 		{
 		  next = GTP_UP_CLASSIFY_NEXT_DROP;
 		  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
-		  goto trace;
-		}
-	      else if (far->forward.outer_header_creation.description
-		       & OUTER_HEADER_CREATION_UDP_IP6)
-		{
-		  next = GTP_UP_CLASSIFY_NEXT_DROP;
-		  // error = GTP_UP_CLASSIFY_ERROR_NOT_YET;
-		  goto trace;
 		}
 	      else
 		{
-		  next = GTP_UP_CLASSIFY_NEXT_IP_INPUT;
-		  vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
+		  next = GTP_UP_CLASSIFY_NEXT_DROP;
 		}
 
 #define IS_DL(_pdr, _far)						\
@@ -403,6 +429,7 @@ VLIB_REGISTER_NODE (gtp_up_ip4_classify_node) = {
     [GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP] = "gtp-up4-encap",
     [GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP] = "gtp-up6-encap",
     [GTP_UP_CLASSIFY_NEXT_IP_INPUT]      = "ip4-input",
+    [GTP_UP_CLASSIFY_NEXT_IP_LOCAL]      = "ip4-local",
   },
 };
 
@@ -422,6 +449,7 @@ VLIB_REGISTER_NODE (gtp_up_ip6_classify_node) = {
     [GTP_UP_CLASSIFY_NEXT_GTP_IP4_ENCAP] = "gtp-up4-encap",
     [GTP_UP_CLASSIFY_NEXT_GTP_IP6_ENCAP] = "gtp-up6-encap",
     [GTP_UP_CLASSIFY_NEXT_IP_INPUT]      = "ip6-input",
+    [GTP_UP_CLASSIFY_NEXT_IP_LOCAL]      = "ip6-local",
   },
 };
 

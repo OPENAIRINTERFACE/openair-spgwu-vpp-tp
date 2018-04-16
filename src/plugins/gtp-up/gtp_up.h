@@ -241,6 +241,10 @@ typedef struct {
 
 /* Forward Action Rules - Forwarding Parameters */
 typedef struct {
+  u16 flags;
+#define FAR_F_REDIRECT_INFORMATION	BIT(0)
+#define FAR_F_OUTER_HEADER_CREATION	BIT(1)
+
   int dst_intf;
 #define DST_INTF_ACCESS		0
 #define DST_INTF_CORE		1
@@ -250,6 +254,7 @@ typedef struct {
   u32 dst_sw_if_index;
   uword nwi;
 
+  pfcp_redirect_information_t redirect_information;
   pfcp_outer_header_creation_t outer_header_creation;
 
   u32 peer_idx;

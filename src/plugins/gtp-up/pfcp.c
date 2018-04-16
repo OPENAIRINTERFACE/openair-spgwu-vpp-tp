@@ -1015,20 +1015,132 @@ static int encode_reporting_triggers(void *p, u8 **vec)
   return 0;
 }
 
+static char *redir_info_type[] = {
+  [REDIRECT_INFORMATION_IPv4] = "IPv4",
+  [REDIRECT_INFORMATION_IPv6] = "IPv6",
+  [REDIRECT_INFORMATION_HTTP] = "HTTP",
+  [REDIRECT_INFORMATION_SIP] = "SIP",
+};
+
+u8 *
+format_redirect_information(u8 * s, va_list * args)
+{
+  pfcp_redirect_information_t *n = va_arg (*args, pfcp_redirect_information_t *);
+
+  switch (n->type)
+    {
+    case REDIRECT_INFORMATION_IPv4:
+    case REDIRECT_INFORMATION_IPv6:
+      s = format(s, "%s to %U", redir_info_type[n->type],
+		 format_ip46_address, &n->ip, IP46_TYPE_ANY);
+      break;
+
+    case REDIRECT_INFORMATION_HTTP:
+    case REDIRECT_INFORMATION_SIP:
+      s = format(s, "%s to %s", redir_info_type[n->type], n->uri);
+      break;
+    }
+  return s;
+}
+
 static int decode_redirect_information(u8 *data, u16 length, void *p)
 {
-  pfcp_redirect_information_t *v __attribute__ ((unused)) = p;
+  pfcp_redirect_information_t *v = p;
+  unformat_input_t input;
+  u16 addr_len;
+  int rv;
 
-  pfcp_warning ("PFCP: TODO decode_redirect_information");
+  if (length < 3)
+    return PFCP_CAUSE_INVALID_LENGTH;
+
+  v->type = get_u8(data);
+  addr_len = get_u16(data);
+  length -= 3;
+
+  if (addr_len > length)
+    return PFCP_CAUSE_INVALID_LENGTH;
+
+  switch (v->type)
+    {
+    case REDIRECT_INFORMATION_IPv4:
+    case REDIRECT_INFORMATION_IPv6:
+      unformat_init_string(&input, (char *)data, addr_len);
+      rv = unformat(&input, "%U", unformat_ip46_address, &v->ip,
+		    v->type == REDIRECT_INFORMATION_IPv4 ? IP46_TYPE_IP4 : IP46_TYPE_IP6);
+      unformat_free(&input);
+
+      if (!rv)
+	return PFCP_CAUSE_REQUEST_REJECTED;
+
+      break;
+
+    case REDIRECT_INFORMATION_HTTP:
+    case REDIRECT_INFORMATION_SIP:
+      vec_reset_length(v->uri);
+      vec_add(v->uri, data, addr_len);
+      break;
+
+    default:
+      return PFCP_CAUSE_REQUEST_REJECTED;
+    }
+
+  pfcp_debug ("PFCP: Redirect Information: %U.", format_redirect_information, v);
   return 0;
 }
 
 static int encode_redirect_information(void *p, u8 **vec)
 {
-  pfcp_redirect_information_t *v __attribute__ ((unused)) = p;
+  pfcp_redirect_information_t *v = p;
+  u8 * s;
 
-  pfcp_warning ("PFCP: TODO encode_redirect_information");
+  pfcp_debug ("PFCP: Redirect Information: %U.", format_redirect_information, v);
+
+  put_u8(*vec, v->type);
+
+  switch (v->type)
+    {
+    case REDIRECT_INFORMATION_IPv4:
+    case REDIRECT_INFORMATION_IPv6:
+      s = format(0, "%U", format_ip46_address, &v->ip, IP46_TYPE_ANY);
+      put_u16(*vec, vec_len(s));
+      vec_append(*vec, s);
+      vec_free(s);
+      break;
+
+    case REDIRECT_INFORMATION_HTTP:
+    case REDIRECT_INFORMATION_SIP:
+      put_u16(*vec, vec_len(v->uri));
+      vec_append(*vec, v->uri);
+      break;
+    }
+
   return 0;
+}
+
+void cpy_redirect_information(pfcp_redirect_information_t *dst,
+			      pfcp_redirect_information_t *src)
+{
+  dst->type = src->type;
+
+  switch (src->type)
+    {
+    case REDIRECT_INFORMATION_IPv4:
+    case REDIRECT_INFORMATION_IPv6:
+      dst->ip = src->ip;
+      break;
+
+    case REDIRECT_INFORMATION_HTTP:
+    case REDIRECT_INFORMATION_SIP:
+      dst->uri = vec_dup(src->uri);
+      break;
+    }
+}
+
+void free_redirect_information(void *p)
+{
+  pfcp_redirect_information_t *v = p;
+
+  vec_free(v->uri);
 }
 
 static int decode_report_type(u8 *data, u16 length, void *p)
@@ -3669,7 +3781,7 @@ static struct pfcp_ie_def group_specs[] =
     SIMPLE_IE(PFCP_IE_SUBSEQUENT_TIME_THRESHOLD, subsequent_time_threshold),
     SIMPLE_IE(PFCP_IE_INACTIVITY_DETECTION_TIME, inactivity_detection_time),
     SIMPLE_IE(PFCP_IE_REPORTING_TRIGGERS, reporting_triggers),
-    SIMPLE_IE(PFCP_IE_REDIRECT_INFORMATION, redirect_information),
+    SIMPLE_IE_FREE(PFCP_IE_REDIRECT_INFORMATION, redirect_information),
     SIMPLE_IE(PFCP_IE_REPORT_TYPE, report_type),
     SIMPLE_IE(PFCP_IE_OFFENDING_IE, offending_ie),
     SIMPLE_IE(PFCP_IE_FORWARDING_POLICY, forwarding_policy),

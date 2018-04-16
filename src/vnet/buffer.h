@@ -407,6 +407,15 @@ typedef struct
       /* buffer trajectory tracing */
       u16 *trajectory_trace;
 #endif
+
+      u32 connection_index;
+
+      /* GTP-U */
+      struct
+      {
+	u32 session_index;
+	u32 far_index;
+      } gtpu;
     };
     u32 unused[11];
   };

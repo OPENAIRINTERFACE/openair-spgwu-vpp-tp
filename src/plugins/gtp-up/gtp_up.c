@@ -777,6 +777,7 @@ static clib_error_t * gtp_up_init (vlib_main_t * vm)
 {
   gtp_up_main_t * sm = &gtp_up_main;
   char *argv[] = { "gtp-up", "--no-huge", "--no-pci", NULL };
+  clib_error_t * error;
   int ret;
 
   sm->vnet_main = vnet_get_main ();
@@ -786,6 +787,9 @@ static clib_error_t * gtp_up_init (vlib_main_t * vm)
   if (ret < 0)
     return clib_error_return (0, "rte_eal_init returned %d", ret);
   rte_log_set_global_level (RTE_LOG_DEBUG);
+
+  if ((error = vlib_call_init_function (vm, gtp_up_http_redirect_server_main_init)))
+    return error;
 
   sm->nwi_index_by_name =
     hash_create_vec ( /* initial length */ 32, sizeof (u8), sizeof (uword));

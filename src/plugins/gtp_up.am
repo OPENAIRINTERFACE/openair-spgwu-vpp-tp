@@ -52,7 +52,9 @@ gtpup_plugin_la_SOURCES = \
   gtp-up/gtp_up_all_api_h.h \
   gtp-up/gtp_up_msg_enum.h \
   gtp-up/gtp_up_sx.h \
-  gtp-up/gtp_up_sx_api.h
+  gtp-up/gtp_up_sx_api.h \
+  gtp-up/gtp_up_http_redirect_server.h \
+  gtp-up/gtp_up_http_redirect_server.c
 
 API_FILES += gtp-up/gtp_up.api
 
