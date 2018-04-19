@@ -340,16 +340,16 @@ gtpu_input (vlib_main_t * vm,
 	      switch (gtpu1->type)
 		{
 		case GTPU_TYPE_ERROR_IND:
-		  next0 = GTPU_INPUT_NEXT_ERROR_INDICATION;
+		  next1 = GTPU_INPUT_NEXT_ERROR_INDICATION;
 		  break;
 
 		case GTPU_TYPE_ECHO_REQUEST:
-		  next0 = GTPU_INPUT_NEXT_ECHO_REQUEST;
+		  next1 = GTPU_INPUT_NEXT_ECHO_REQUEST;
 		  break;
 
 		case GTPU_TYPE_ECHO_RESPONSE:
 		  // TODO next0 = GTPU_INPUT_NEXT_ECHO_RESPONSE;
-		  next0 = GTPU_INPUT_NEXT_DROP;
+		  next1 = GTPU_INPUT_NEXT_DROP;
 		  break;
 
 		default:
@@ -1269,7 +1269,7 @@ VLIB_REGISTER_NODE (gtp_ip4_echo_req_node) = {
   },
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH (gtp_ip4_echo_req_node,process_ip4_echo_request)
+VLIB_NODE_FUNCTION_MULTIARCH (gtp_ip4_echo_req_node,gtpu4_echo_request)
 
 VLIB_REGISTER_NODE (gtp_ip6_echo_req_node) = {
   .function = gtpu6_echo_request,
@@ -1287,7 +1287,7 @@ VLIB_REGISTER_NODE (gtp_ip6_echo_req_node) = {
   },
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH (gtp_ip6_echo_req_node,process_ip6_echo_request)
+VLIB_NODE_FUNCTION_MULTIARCH (gtp_ip6_echo_req_node,gtpu6_echo_request)
 
 
 
