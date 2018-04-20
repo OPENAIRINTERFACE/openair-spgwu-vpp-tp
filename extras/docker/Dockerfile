@@ -5,15 +5,12 @@ RUN mkdir /src && \
 ADD . /src/vpp
 RUN cd /src/vpp && \
     make UNATTENDED=yes install-dep && \
-    make bootstrap V=1 && \
-    make build-release V=1 && \
-    make install DESTDIR=/src/vpp/build && \
-    ls -lR build && \
-    ldd /src/vpp/build/usr/bin/vpp
+    make pkg-deb V=1
 
 FROM ubuntu:xenial
 WORKDIR /
 RUN apt-get update && apt-get dist-upgrade -yy && \
-    apt-get install -yy liburcu6
-COPY --from=build-env /src/vpp/build /
+    apt-get install -yy liburcu4 libmbedcrypto0 libmbedtls10 libmbedx509-0 libnuma1 python python-cffi
+COPY --from=build-env /src/vpp/build-root/*deb /
+RUN dpkg -i *deb
 ENTRYPOINT /usr/bin/vpp

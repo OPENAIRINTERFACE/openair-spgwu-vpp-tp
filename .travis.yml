@@ -3,6 +3,9 @@ sudo: required
 services:
   - docker
 
+git:
+  depth: false
+
 env:
   global:
     - BUILD_IMAGE="vpp"
