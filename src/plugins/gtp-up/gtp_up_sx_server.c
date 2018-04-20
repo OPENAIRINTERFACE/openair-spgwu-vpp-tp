@@ -85,7 +85,7 @@ void gtp_up_sx_send_data (sx_msg_t * msg)
       ih = vlib_buffer_push_ip6 (vm, b0, &msg->lcl.address.ip6, &msg->rmt.address.ip6,
 				 IP_PROTOCOL_UDP);
       vnet_buffer (b0)->l3_hdr_offset = (u8 *) ih - b0->data;
-      to_node_index = ip4_lookup_node.index;
+      to_node_index = ip6_lookup_node.index;
     }
 
   vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
