@@ -32,6 +32,8 @@
 #include <vnet/ip/format.h>
 #include <vnet/fib/fib_entry.h>
 #include <vnet/fib/fib_table.h>
+#include <vnet/fib/ip4_fib.h>
+#include <vnet/fib/ip6_fib.h>
 #include <search.h>
 #include <netinet/ip.h>
 
@@ -511,8 +513,6 @@ gtp_up_session_t *sx_create_session(int sx_fib_index, const ip46_address_t *up_a
   ip4_sw_interface_enable_disable (sw_if_index, 1);
   ip6_sw_interface_enable_disable (sw_if_index, 1);
 
-  // TODO: setup FIBs
-
   vnet_get_sw_interface (vnet_get_main (), sw_if_index)->flood_class =
 	  VNET_FLOOD_CLASS_TUNNEL_NORMAL;
 
@@ -603,12 +603,12 @@ peer_addr_ref (const gtp_up_far_forward_t * fwd)
   if (is_ip4)
     {
       ip46_address_set_ip4(&key.addr, &fwd->outer_header_creation.ip4);
-      key.fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+      key.fib_index = ip4_fib_table_get_index_for_sw_if_index(fwd->dst_sw_if_index);
     }
   else
     {
       key.addr.ip6 = fwd->outer_header_creation.ip6;
-      key.fib_index = vec_elt (ip6_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+      key.fib_index = ip6_fib_table_get_index_for_sw_if_index(fwd->dst_sw_if_index);
     }
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
@@ -665,12 +665,12 @@ peer_addr_unref (const gtp_up_far_forward_t * fwd)
   if (is_ip4)
     {
       ip46_address_set_ip4(&key.addr, &fwd->outer_header_creation.ip4);
-      key.fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+      key.fib_index = ip4_fib_table_get_index_for_sw_if_index(fwd->dst_sw_if_index);
     }
   else
     {
       key.addr.ip6 = fwd->outer_header_creation.ip6;
-      key.fib_index = vec_elt (ip6_main.fib_index_by_sw_if_index, fwd->dst_sw_if_index);
+      key.fib_index = ip6_fib_table_get_index_for_sw_if_index(fwd->dst_sw_if_index);
     }
 
   peer = hash_get_mem (gtm->peer_index_by_ip, &key);
@@ -926,6 +926,7 @@ static int v6_teid_cmp(const void *a, const void *b)
   return memcmp(a, b, sizeof(gtpu6_tunnel_key_t));
 }
 
+//TODO: instead of using the UE IP, we should use the DL SDF dst fields
 static void sx_add_del_vrf_ip(const void *ip, void *si, int is_add)
 {
   const ip46_address_fib_t *vrf_ip = ip;
@@ -944,7 +945,7 @@ static void sx_add_del_vrf_ip(const void *ip, void *si, int is_add)
     {
       pfx.fp_addr.ip6.as_u64[0] = vrf_ip->addr.ip6.as_u64[0];
       pfx.fp_addr.ip6.as_u64[1] = vrf_ip->addr.ip6.as_u64[1];
-      pfx.fp_len = 128;
+      pfx.fp_len = 64;
       pfx.fp_proto = FIB_PROTOCOL_IP6;
     }
 
@@ -952,9 +953,9 @@ static void sx_add_del_vrf_ip(const void *ip, void *si, int is_add)
     {
       /* add reverse route for client ip */
       fib_table_entry_path_add (vrf_ip->fib_index, &pfx,
-				FIB_SOURCE_PLUGIN_HI, FIB_ENTRY_FLAG_NONE,
+				FIB_SOURCE_PLUGIN_HI, FIB_ENTRY_FLAG_ATTACHED,
 				fib_proto_to_dpo (pfx.fp_proto),
-				&pfx.fp_addr, sess->sw_if_index, ~0,
+				NULL, sess->sw_if_index, ~0,
 				1, NULL, FIB_ROUTE_PATH_FLAG_NONE);
     }
   else
@@ -963,8 +964,7 @@ static void sx_add_del_vrf_ip(const void *ip, void *si, int is_add)
       fib_table_entry_path_remove (vrf_ip->fib_index, &pfx,
 				   FIB_SOURCE_PLUGIN_HI,
 				   fib_proto_to_dpo (pfx.fp_proto),
-				   &pfx.fp_addr,
-				   sess->sw_if_index, ~0, 1,
+				   NULL, sess->sw_if_index, ~0, 1,
 				   FIB_ROUTE_PATH_FLAG_NONE);
     }
 }
@@ -1603,7 +1603,8 @@ static int build_sx_sdf(gtp_up_session_t *sx)
 	    vec_alloc(pending->vrf_ip, 1);
 	    vrf_ip = vec_end(pending->vrf_ip);
 	    ip46_address_set_ip4(&vrf_ip->addr, &pdr->pdi.ue_addr.ip4);
-	    vrf_ip->fib_index = pdr->pdi.src_sw_if_index;
+	    vrf_ip->fib_index =
+		    ip4_fib_table_get_index_for_sw_if_index(pdr->pdi.src_sw_if_index);
 
 	    _vec_len(pending->vrf_ip)++;
 	  }
@@ -1615,7 +1616,8 @@ static int build_sx_sdf(gtp_up_session_t *sx)
 	    vec_alloc(pending->vrf_ip, 1);
 	    vrf_ip = vec_end(pending->vrf_ip);
 	    vrf_ip->addr.ip6 = pdr->pdi.ue_addr.ip6;
-	    vrf_ip->fib_index = pdr->pdi.src_sw_if_index;
+	    vrf_ip->fib_index =
+		    ip6_fib_table_get_index_for_sw_if_index(pdr->pdi.src_sw_if_index);
 
 	    _vec_len(pending->vrf_ip)++;
 	  }
