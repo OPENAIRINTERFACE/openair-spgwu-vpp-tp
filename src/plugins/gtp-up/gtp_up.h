@@ -120,6 +120,23 @@ typedef CLIB_PACKED (struct {
 typedef CLIB_PACKED
 (struct {
   /*
+   * Key fields: src intf and gtpu teid on incoming gtpu packet
+   * all fields in NET byte order
+   */
+  union {
+    struct {
+      u32 src_intf;
+      u32 teid;
+    };
+    u64 as_u64;
+  };
+}) gtpu_intf_tunnel_key_t;
+/* *INDENT-ON* */
+
+/* *INDENT-OFF* */
+typedef CLIB_PACKED
+(struct {
+  /*
    * Key fields: ip src and gtpu teid on incoming gtpu packet
    * all fields in NET byte order
    */
@@ -348,8 +365,7 @@ typedef struct {
     gtpu4_tunnel_key_t *v4_teid;
     gtpu6_tunnel_key_t *v6_teid;
 
-    uword *v4_wildcard_teid;
-    uword *v6_wildcard_teid;
+    uword *wildcard_teid;
 
     u16 * send_end_marker;
   } rules[2];

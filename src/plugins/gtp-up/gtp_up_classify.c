@@ -147,29 +147,14 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  acl = is_ip4 ? active->sdf[direction].ip4 : active->sdf[direction].ip6;
 	  if (acl == NULL)
 	    {
+	      gtpu_intf_tunnel_key_t key;
 	      uword *p;
 
-	      if (is_ip4)
-		{
-		  ip4 = (ip4_header_t *)vlib_buffer_get_current(b);
-		  gtpu4_tunnel_key_t key4;
+	      key.src_intf = vnet_buffer (b)->gtpu.src_intf;
+	      key.teid = vnet_buffer (b)->gtpu.teid;
 
-		  key4.dst = ip4->dst_address.as_u32;
-		  key4.teid = vnet_buffer (b)->gtpu.teid;
+	      p = hash_get (active->wildcard_teid, key.as_u64);
 
-		  p = hash_get (active->v4_wildcard_teid, key4.as_u64);
-		}
-	      else
-		{
-		  ip6 = (ip6_header_t *)vlib_buffer_get_current(b);
-		  gtpu6_tunnel_key_t key6;
-
-		  key6.dst.as_u64[0] = ip6->dst_address.as_u64[0];
-		  key6.dst.as_u64[1] = ip6->dst_address.as_u64[1];
-		  key6.teid = vnet_buffer (b)->gtpu.teid;
-
-		  p = hash_get_mem (active->v6_wildcard_teid, &key6);
-		}
 
 	      if (PREDICT_TRUE (p != NULL))
 		{

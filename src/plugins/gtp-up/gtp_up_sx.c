@@ -789,8 +789,7 @@ static void sx_free_rules(gtp_up_session_t *sx, int rule)
   vec_free(rules->v4_teid);
   vec_free(rules->v6_teid);
 
-  hash_free(rules->v4_wildcard_teid);
-  hash_free(rules->v6_wildcard_teid);
+  hash_free(rules->wildcard_teid);
 
   memset(rules, 0, sizeof(*rules));
 }
@@ -1347,32 +1346,15 @@ static int add_ip6_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr,
   return 0;
 }
 
-static int add_wildcard_teid(struct rules *rules, const pfcp_f_teid_t teid, u32 pdr_id)
+static int add_wildcard_teid(struct rules *rules, const u8 src_intf,
+			     const pfcp_f_teid_t teid, u32 pdr_id)
 {
-  if (teid.flags & F_TEID_V4)
-    {
-      gtpu4_tunnel_key_t v4_teid;
+  gtpu_intf_tunnel_key_t key;
 
-      v4_teid.dst = teid.ip4.as_u32;
-      v4_teid.teid = teid.teid;
+  key.src_intf = src_intf;
+  key.teid = teid.teid;
 
-      hash_set (rules->v4_wildcard_teid, v4_teid.as_u64, pdr_id);
-    }
-
-  if (teid.flags & F_TEID_V6)
-    {
-      gtpu6_tunnel_key_t v6_teid;
-
-      v6_teid.dst = teid.ip6;
-      v6_teid.teid = teid.teid;
-
-      if (!rules->v6_wildcard_teid)
-	rules->v6_wildcard_teid = hash_create_mem (0,
-						   sizeof (gtpu6_tunnel_key_t),
-						   sizeof (uword));
-
-      hash_set_mem_alloc (&rules->v6_wildcard_teid, &v6_teid, pdr_id);
-    }
+  hash_set (rules->wildcard_teid, key.as_u64, pdr_id);
 
   return 0;
 }
@@ -1669,7 +1651,7 @@ static int build_sx_sdf(gtp_up_session_t *sx)
 	{
 	  if ((pdr->pdi.fields & F_PDI_LOCAL_F_TEID) &&
 	      !(pdr->pdi.fields & F_PDI_UE_IP_ADDR))
-	    add_wildcard_teid(pending, pdr->pdi.teid, pdr->id);
+	    add_wildcard_teid(pending, pdr->pdi.src_intf, pdr->pdi.teid, pdr->id);
 
 	  if (pdr->pdi.src_intf != SRC_INTF_ACCESS &&
 	      !(pdr->pdi.fields & F_PDI_UE_IP_ADDR))
@@ -1727,11 +1709,8 @@ int sx_update_apply(gtp_up_session_t *sx)
       pending->v6_teid = active->v6_teid;
       active->v6_teid = NULL;
 
-      pending->v4_wildcard_teid = active->v4_wildcard_teid;
-      active->v4_wildcard_teid = NULL;
-
-      pending->v6_wildcard_teid = active->v6_wildcard_teid;
-      active->v6_wildcard_teid = NULL;
+      pending->wildcard_teid = active->wildcard_teid;
+      active->wildcard_teid = NULL;
 
       memcpy(&pending->sdf, &active->sdf, sizeof(active->sdf));
       memset(&active->sdf, 0, sizeof(active->sdf));
