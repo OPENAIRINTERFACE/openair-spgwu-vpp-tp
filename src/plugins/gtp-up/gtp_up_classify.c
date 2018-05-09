@@ -317,8 +317,12 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		    }
 		  else
 		    {
+		      u32 fib_index = is_ip4 ?
+			ip4_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index) :
+			ip6_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index);
+
 		      next = GTP_UP_CLASSIFY_NEXT_IP_INPUT;
-		      vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
+		      vnet_buffer (b)->sw_if_index[VLIB_TX] = fib_index;
 		    }
 		}
 	      else if (far->apply_action & FAR_BUFFER)
