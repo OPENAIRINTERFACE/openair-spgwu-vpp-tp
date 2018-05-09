@@ -25,6 +25,8 @@
 #include <vppinfra/hash.h>
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
+#include <vnet/fib/ip4_fib.h>
+#include <vnet/fib/ip6_fib.h>
 #include <vnet/ethernet/ethernet.h>
 
 #include <gtp-up/gtp_up.h>
@@ -302,9 +304,11 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		    }
 		  else if (far->forward.flags & FAR_F_REDIRECT_INFORMATION)
 		    {
+		      u32 fib_index = is_ip4 ?
+			ip4_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index) :
+			ip6_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index);
+
 		      vnet_buffer (b)->sw_if_index[VLIB_TX] = far->forward.dst_sw_if_index;
-		      u32 fib_index = vec_elt (ip4_main.fib_index_by_sw_if_index,
-					       far->forward.dst_sw_if_index);
 		      vnet_buffer2 (b)->gtpu.session_index = sidx;
 		      vnet_buffer2 (b)->gtpu.far_index = (far - active->far) | 0x80000000;
 		      vnet_buffer2 (b)->connection_index =
