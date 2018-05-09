@@ -698,15 +698,18 @@ static int make_pending_pdr(gtp_up_session_t *sx)
   if (pending->pdr)
     return 0;
 
-  if (active->pdr) {
-    size_t i;
+  if (active->pdr)
+    {
+      size_t i;
 
-    pending->pdr = vec_dup(active->pdr);
-    vec_foreach_index (i, active->pdr) {
-      vec_elt(pending->pdr, i).urr_ids =
-	vec_dup(vec_elt(active->pdr, i).urr_ids);
+      pending->pdr = vec_dup(active->pdr);
+      vec_foreach_index (i, active->pdr)
+	{
+	  vec_elt(pending->pdr, i).urr_ids =
+	    vec_dup(vec_elt(active->pdr, i).urr_ids);
+	}
     }
-  }
+
   return 0;
 }
 
@@ -1209,23 +1212,23 @@ static int add_ip4_sdf(struct rte_acl_ctx *ctx, const gtp_up_pdr_t *pdr,
 
 static u32 ip6_mask (u8 pos, u8 pref_len)
 {
-  if ((4 - pos) > (pref_len / 32))
-    return 0;
-  else if ((4 - pos) < (pref_len / 32))
+  if (pref_len >= (pos + 1) * 32)
     return 32;
   else
-    return pref_len % 32;
+    return pref_len > (pos * 32) ? pref_len - (pos * 32) : 0;
 }
 
 static void acl_set_ue_ip6(struct acl6_rule *ip6, int field, const gtp_up_pdr_t *pdr)
 {
   if ((pdr->pdi.fields & F_PDI_UE_IP_ADDR) &&
       pdr->pdi.ue_addr.flags & IE_UE_IP_ADDRESS_V6)
+    {
     for (int i = 0; i < 4; i++)
       {
 	ip6->field[field + i].value.u32 = clib_net_to_host_u32(pdr->pdi.ue_addr.ip6.as_u32[i]);
-	ip6->field[field + i].mask_range.u32 = ~0;
+	ip6->field[field + i].mask_range.u32 = ip6_mask(i, 64);
       }
+    }
   else
     for (int i = 0; i < 4; i++)
       {
