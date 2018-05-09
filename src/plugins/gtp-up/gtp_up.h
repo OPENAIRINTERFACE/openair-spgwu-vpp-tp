@@ -72,6 +72,8 @@ typedef struct
   u8 next_ext_type;
 } gtpu_header_t;
 
+#define GTPU_V1_HDR_LEN   8
+
 #define GTPU_VER_MASK (7<<5)
 #define GTPU_PT_BIT   (1<<4)
 #define GTPU_E_BIT    (1<<2)
