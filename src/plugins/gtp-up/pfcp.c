@@ -1474,27 +1474,29 @@ static int encode_pdr_id(void *p, u8 **vec)
   return 0;
 }
 
-static void debug_f_seid(pfcp_f_seid_t *v)
+static u8 *
+format_f_seid(u8 * s, va_list * args)
 {
-  switch (v->flags & (IE_F_SEID_IP_ADDRESS_V4 | IE_F_SEID_IP_ADDRESS_V6))
+  pfcp_f_seid_t *n = va_arg (*args, pfcp_f_seid_t *);
+
+  s = format(s, "0x%016" PRIx64 "@", n->seid);
+
+  switch (n->flags & (IE_F_SEID_IP_ADDRESS_V4 | IE_F_SEID_IP_ADDRESS_V6))
     {
     case IE_F_SEID_IP_ADDRESS_V4:
-      pfcp_debug ("PFCP: F-SEID 0x%016" PRIx64 " (%" PRIu64 "),IPv4:%U.",
-		  v->seid, v->seid, format_ip4_address, &v->ip4);
+      s = format(s, "%U", format_ip4_address, &n->ip4);
       break;
 
     case IE_F_SEID_IP_ADDRESS_V6:
-      pfcp_debug ("PFCP: F-SEID 0x%016" PRIx64 " (%" PRIu64 "),IPv6:%U.",
-		  v->seid, v->seid, format_ip4_address, &v->ip6);
+      s = format(s, "%U", format_ip6_address, &n->ip6);
       break;
 
     case (IE_F_SEID_IP_ADDRESS_V4 | IE_F_SEID_IP_ADDRESS_V6):
-      pfcp_debug ("PFCP: F-SEID 0x%016" PRIx64 " (%" PRIu64 "),IPv4:%U,IPv6:%U.",
-		  v->seid, v->seid,
-		  format_ip4_address, &v->ip4,
-		  format_ip4_address, &v->ip6);
+      s = format(s, "%U,%U", format_ip4_address, &n->ip4, format_ip6_address, &n->ip6);
       break;
     }
+
+  return s;
 }
 
 static int decode_f_seid(u8 *data, u16 length, void *p)
@@ -1530,7 +1532,7 @@ static int decode_f_seid(u8 *data, u16 length, void *p)
       get_ip6(v->ip6, data);
     }
 
-  debug_f_seid (v);
+  pfcp_debug ("PFCP: F-SEID: %U.", format_f_seid, v);
   return 0;
 }
 
@@ -1538,7 +1540,7 @@ static int encode_f_seid(void *p, u8 **vec)
 {
   pfcp_f_seid_t *v __attribute__ ((unused)) = p;
 
-  debug_f_seid (v);
+  pfcp_debug ("PFCP: F-SEID: %U.", format_f_seid, v);
 
   put_u8(*vec, v->flags);
   put_u64(*vec, v->seid);
