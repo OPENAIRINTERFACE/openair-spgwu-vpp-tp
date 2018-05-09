@@ -504,24 +504,6 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      udp3->length = new_l3;
 	      udp3->src_port = flow_hash3;
 
-	      /* IPv6 UDP checksum is mandatory */
-	      udp0->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b0,
-								 ip6_0, &bogus);
-	      if (udp0->checksum == 0)
-		udp0->checksum = 0xffff;
-	      udp1->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b1,
-							ip6_1, &bogus);
-	      if (udp1->checksum == 0)
-		udp1->checksum = 0xffff;
-	      udp2->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b2,
-								 ip6_2, &bogus);
-	      if (udp2->checksum == 0)
-		udp2->checksum = 0xffff;
-	      udp3->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b3,
-							ip6_3, &bogus);
-	      if (udp3->checksum == 0)
-		udp3->checksum = 0xffff;
-
 	      /* Fix GTPU length */
 	      gtpu0 = (gtpu_header_t *)(udp0+1);
 	      new_l0 = clib_host_to_net_u16 (vlib_buffer_length_in_chain(vm, b0)
@@ -543,6 +525,24 @@ gtp_up_encap_inline (vlib_main_t * vm,
 					     - sizeof (*ip6_3) - sizeof(*udp3)
 					     - GTPU_V1_HDR_LEN);
 	      gtpu3->length = new_l3;
+
+	      /* IPv6 UDP checksum is mandatory */
+	      udp0->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b0,
+								 ip6_0, &bogus);
+	      if (udp0->checksum == 0)
+		udp0->checksum = 0xffff;
+	      udp1->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b1,
+							ip6_1, &bogus);
+	      if (udp1->checksum == 0)
+		udp1->checksum = 0xffff;
+	      udp2->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b2,
+								 ip6_2, &bogus);
+	      if (udp2->checksum == 0)
+		udp2->checksum = 0xffff;
+	      udp3->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b3,
+							ip6_3, &bogus);
+	      if (udp3->checksum == 0)
+		udp3->checksum = 0xffff;
 	    }
 
 	  pkts_encapsulated += 4;
@@ -740,18 +740,18 @@ gtp_up_encap_inline (vlib_main_t * vm,
 	      udp0->length = new_l0;
 	      udp0->src_port = flow_hash0;
 
-	      /* IPv6 UDP checksum is mandatory */
-	      udp0->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b0,
-								 ip6_0, &bogus);
-	      if (udp0->checksum == 0)
-		udp0->checksum = 0xffff;
-
 	      /* Fix GTPU length */
 	      gtpu0 = (gtpu_header_t *)(udp0+1);
 	      new_l0 = clib_host_to_net_u16 (vlib_buffer_length_in_chain(vm, b0)
 					     - sizeof (*ip6_0) - sizeof(*udp0)
 					     - GTPU_V1_HDR_LEN);
 	      gtpu0->length = new_l0;
+
+	      /* IPv6 UDP checksum is mandatory */
+	      udp0->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b0,
+								 ip6_0, &bogus);
+	      if (udp0->checksum == 0)
+		udp0->checksum = 0xffff;
 	    }
 
 	  pkts_encapsulated ++;
