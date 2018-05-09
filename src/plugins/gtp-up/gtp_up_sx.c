@@ -722,7 +722,20 @@ static int make_pending_far(gtp_up_session_t *sx)
     return 0;
 
   if (active->far)
-    pending->far = vec_dup(active->far);
+    {
+      size_t i;
+
+      pending->far = vec_dup(active->far);
+      vec_foreach_index (i, active->far)
+	{
+	  gtp_up_far_t *far = vec_elt_at_index(active->far, i);
+
+	  if (!(far->apply_action & FAR_FORWARD) || far->forward.rewrite == NULL)
+	    continue;
+
+	  vec_elt(pending->far, i).forward.rewrite = vec_dup(far->forward.rewrite);
+	}
+    }
 
   return 0;
 }
