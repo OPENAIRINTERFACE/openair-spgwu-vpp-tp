@@ -378,8 +378,6 @@ typedef struct {
   /* vnet intfc index */
   u32 sw_if_index;
   u32 hw_if_index;
-
-  struct rcu_head rcu_head;
 } gtp_up_session_t;
 
 

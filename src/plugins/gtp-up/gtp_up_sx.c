@@ -794,16 +794,26 @@ static void sx_free_rules(gtp_up_session_t *sx, int rule)
   memset(rules, 0, sizeof(*rules));
 }
 
+struct rcu_session_info {
+  struct rcu_head rcu_head;
+  uword idx;
+};
+
 static void rcu_free_sx_session_info(struct rcu_head *head)
 {
-  gtp_up_session_t *sx = caa_container_of(head, gtp_up_session_t, rcu_head);
+  struct rcu_session_info *si = caa_container_of(head, struct rcu_session_info, rcu_head);
   gtp_up_main_t *gtm = &gtp_up_main;
+  gtp_up_session_t *sx;
+
+  sx = pool_elt_at_index (gtm->sessions, si->idx);
 
   for (size_t i = 0; i < ARRAY_LEN(sx->rules); i++)
     sx_free_rules(sx, i);
 
   vec_add1 (gtm->free_session_hw_if_indices, sx->hw_if_index);
-  pool_put (gtm->sessions, sx);
+
+  pool_put_index (gtm->sessions, si->idx);
+  clib_mem_free(si);
 }
 
 int sx_disable_session(gtp_up_session_t *sx)
@@ -839,7 +849,13 @@ int sx_disable_session(gtp_up_session_t *sx)
 
 void sx_free_session(gtp_up_session_t *sx)
 {
-	call_rcu(&sx->rcu_head, rcu_free_sx_session_info);
+  gtp_up_main_t *gtm = &gtp_up_main;
+  struct rcu_session_info *si;
+
+  si = clib_mem_alloc_no_fail (sizeof(*si));
+  si->idx = sx - gtm->sessions;
+
+  call_rcu(&si->rcu_head, rcu_free_sx_session_info);
 }
 
 #define sx_rule_vector_fns(t)						\
