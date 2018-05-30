@@ -76,6 +76,14 @@ format_af_packet_tx_trace (u8 * s, va_list * args)
   return s;
 }
 
+static u8 *
+format_mac_address (u8 * s, va_list * args)
+{
+  u8 *a = va_arg (*args, u8 *);
+  return format (s, "%02x:%02x:%02x:%02x:%02x:%02x",
+		 a[0], a[1], a[2], a[3], a[4], a[5]);
+}
+
 static uword
 af_packet_interface_tx (vlib_main_t * vm,
 			vlib_node_runtime_t * node, vlib_frame_t * frame)
@@ -123,6 +131,10 @@ af_packet_interface_tx (vlib_main_t * vm,
 		       TPACKET_ALIGN (sizeof (struct tpacket2_hdr)) + offset,
 		       vlib_buffer_get_current (b0), len);
 	  offset += len;
+
+	  clib_warning("af TX %U -> %U\n",
+		       format_mac_address, vlib_buffer_get_current (b0),
+		       format_mac_address, vlib_buffer_get_current (b0) + 6);
 	}
       while ((bi =
 	      (b0->flags & VLIB_BUFFER_NEXT_PRESENT) ? b0->next_buffer : 0));
