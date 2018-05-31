@@ -317,12 +317,22 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		    }
 		  else
 		    {
-		      u32 fib_index = is_ip4 ?
-			ip4_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index) :
-			ip6_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index);
-
+		      if (is_ip4)
+			{
+			  b->flags &= ~(VNET_BUFFER_F_OFFLOAD_TCP_CKSUM |
+					VNET_BUFFER_F_OFFLOAD_UDP_CKSUM |
+					VNET_BUFFER_F_OFFLOAD_IP_CKSUM);
+			  vnet_buffer (b)->sw_if_index[VLIB_TX] =
+			    ip4_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index);
+			}
+		      else
+			{
+			  b->flags &= ~(VNET_BUFFER_F_OFFLOAD_TCP_CKSUM |
+					VNET_BUFFER_F_OFFLOAD_UDP_CKSUM);
+			  vnet_buffer (b)->sw_if_index[VLIB_TX] =
+			    ip6_fib_table_get_index_for_sw_if_index(far->forward.dst_sw_if_index);
+			}
 		      next = GTP_UP_CLASSIFY_NEXT_IP_INPUT;
-		      vnet_buffer (b)->sw_if_index[VLIB_TX] = fib_index;
 		    }
 		}
 	      else if (far->apply_action & FAR_BUFFER)
