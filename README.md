@@ -151,3 +151,25 @@ advanced building strategies and other development notes.
 
 There is PyDoc generated documentation available for the VPP test framework.
 See @ref test_framework_doc for details.
+
+
+
+### Build and Upload Docker VPP Image 
+
+Build and Upload VPP Docker Image comprise of three parts: 
+
+1. GitHub :  Used for version control of VPP code.
+2. GitLab :  Used for build and upload VPP Docker image.
+3. Docker Hub Registry: Used to store VPP Docker image.  
+
+
+Build and Upload Pipeline. 
+
+1. Commit on https://github.com/travelping/vpp repository will be mirrored to the https://gitlab.com/travelping/vpp-github and triger CI/CD PipeLine on GitLab. Mirroring (Sync) between GitHub and GitLab occurs automatically every 30 minutes or sync process can be triggered manually via the GitLab. 
+2. GitLab CI/CD will trigger build and upload of VPP Docker image to the GitHub Registry.
+3. After Successful build image will be uploaded here:  https://hub.docker.com/r/ergw/vpp/
+
+
+Build and Upload steps are described in .gitlab-ci.yml, this file is stored in root directory of this repository.
+
+
