@@ -1,0 +1,184 @@
+--- dpdk-stable-18.02.1/app/test-pmd/cmdline.c
++++ dpdk-stable-18.02.1-musl/app/test-pmd/cmdline.c
+@@ -20,6 +20,7 @@
+ #endif
+ #include <netinet/in.h>
+ 
++#include <sys/types.h>
+ #include <sys/queue.h>
+ 
+ #include <rte_common.h>
+--- dpdk-stable-18.02.1/app/test-pmd/testpmd.h
++++ dpdk-stable-18.02.1-musl/app/test-pmd/testpmd.h
+@@ -5,6 +5,8 @@
+ #ifndef _TESTPMD_H_
+ #define _TESTPMD_H_
+ 
++#include <sys/types.h>
++
+ #include <rte_pci.h>
+ #include <rte_bus_pci.h>
+ #include <rte_gro.h>
+--- dpdk-stable-18.02.1/drivers/bus/pci/linux/pci_uio.c
++++ dpdk-stable-18.02.1-musl/drivers/bus/pci/linux/pci_uio.c
+@@ -30,6 +30,35 @@
+ 
+ #define OFF_MAX              ((uint64_t)(off_t)-1)
+ 
++#if defined(RTE_ARCH_X86)
++
++// Used in pci_uio_ioport_write, these functions are present in glibc
++// in <sys/io.h> (without the pci_uio_ prefix) but not in the
++// musl lib c.
++
++static __inline void
++pci_uio_outl_p(unsigned int value, unsigned short int port)
++{
++  __asm__ __volatile__ ("outl %0,%w1\noutb %%al,$0x80": :"a" (value),
++			"Nd" (port));
++}
++
++static __inline void
++pci_uio_outw_p(unsigned short int value, unsigned short int port)
++{
++  __asm__ __volatile__ ("outw %w0,%w1\noutb %%al,$0x80": :"a" (value),
++			"Nd" (port));
++}
++
++static __inline void
++pci_uio_outb_p(unsigned char value, unsigned short int port)
++{
++  __asm__ __volatile__ ("outb %b0,%w1\noutb %%al,$0x80": :"a" (value),
++			"Nd" (port));
++}
++
++#endif
++
+ int
+ pci_uio_read_config(const struct rte_intr_handle *intr_handle,
+ 		    void *buf, size_t len, off_t offset)
+@@ -504,21 +533,21 @@
+ 		if (len >= 4) {
+ 			size = 4;
+ #if defined(RTE_ARCH_X86)
+-			outl_p(*(const uint32_t *)s, reg);
++			pci_uio_outl_p(*(const uint32_t *)s, reg);
+ #else
+ 			*(volatile uint32_t *)reg = *(const uint32_t *)s;
+ #endif
+ 		} else if (len >= 2) {
+ 			size = 2;
+ #if defined(RTE_ARCH_X86)
+-			outw_p(*(const uint16_t *)s, reg);
++			pci_uio_outw_p(*(const uint16_t *)s, reg);
+ #else
+ 			*(volatile uint16_t *)reg = *(const uint16_t *)s;
+ #endif
+ 		} else {
+ 			size = 1;
+ #if defined(RTE_ARCH_X86)
+-			outb_p(*s, reg);
++			pci_uio_outb_p(*s, reg);
+ #else
+ 			*(volatile uint8_t *)reg = *s;
+ #endif
+--- dpdk-stable-18.02.1/drivers/bus/pci/linux/pci_vfio.c
++++ dpdk-stable-18.02.1-musl/drivers/bus/pci/linux/pci_vfio.c
+@@ -35,6 +35,9 @@
+ 
+ #ifdef VFIO_PRESENT
+ 
++#if defined(PAGE_SIZE)
++#undef PAGE_SIZE
++#endif
+ #define PAGE_SIZE   (sysconf(_SC_PAGESIZE))
+ #define PAGE_MASK   (~(PAGE_SIZE - 1))
+ 
+--- dpdk-stable-18.02.1/drivers/net/enic/base/vnic_devcmd.h
++++ dpdk-stable-18.02.1-musl/drivers/net/enic/base/vnic_devcmd.h
+@@ -6,6 +6,8 @@
+ #ifndef _VNIC_DEVCMD_H_
+ #define _VNIC_DEVCMD_H_
+ 
++#include <sys/types.h>
++
+ #define _CMD_NBITS      14
+ #define _CMD_VTYPEBITS	10
+ #define _CMD_FLAGSBITS  6
+--- dpdk-stable-18.02.1/lib/librte_eal/linuxapp/eal/eal.c
++++ dpdk-stable-18.02.1-musl/lib/librte_eal/linuxapp/eal/eal.c
+@@ -8,6 +8,7 @@
+ #include <stdint.h>
+ #include <string.h>
+ #include <stdarg.h>
++#include <inttypes.h>
+ #include <unistd.h>
+ #include <pthread.h>
+ #include <syslog.h>
+@@ -890,8 +891,8 @@
+ 
+ 	ret = eal_thread_dump_affinity(cpuset, RTE_CPU_AFFINITY_STR_LEN);
+ 
+-	RTE_LOG(DEBUG, EAL, "Master lcore %u is ready (tid=%x;cpuset=[%s%s])\n",
+-		rte_config.master_lcore, (int)thread_id, cpuset,
++	RTE_LOG(DEBUG, EAL, "Master lcore %u is ready (tid=%"PRIxPTR";cpuset=[%s%s])\n",
++		rte_config.master_lcore, (intptr_t)thread_id, cpuset,
+ 		ret == 0 ? "" : "...");
+ 
+ 	if (rte_eal_intr_init() < 0) {
+--- dpdk-stable-18.02.1/lib/librte_eal/linuxapp/eal/eal_hugepage_info.c
++++ dpdk-stable-18.02.1-musl/lib/librte_eal/linuxapp/eal/eal_hugepage_info.c
+@@ -9,6 +9,7 @@
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <fcntl.h>
+ #include <fnmatch.h>
+ #include <inttypes.h>
+ #include <stdarg.h>
+--- dpdk-stable-18.02.1/lib/librte_eal/linuxapp/eal/eal_memory.c
++++ dpdk-stable-18.02.1-musl/lib/librte_eal/linuxapp/eal/eal_memory.c
+@@ -18,6 +18,7 @@
+ #include <sys/queue.h>
+ #include <sys/file.h>
+ #include <unistd.h>
++#include <fcntl.h>
+ #include <limits.h>
+ #include <sys/ioctl.h>
+ #include <sys/time.h>
+--- dpdk-stable-18.02.1/lib/librte_eal/linuxapp/eal/eal_thread.c
++++ dpdk-stable-18.02.1-musl/lib/librte_eal/linuxapp/eal/eal_thread.c
+@@ -6,6 +6,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdint.h>
++#include <inttypes.h>
+ #include <unistd.h>
+ #include <pthread.h>
+ #include <sched.h>
+@@ -121,8 +122,8 @@
+ 
+ 	ret = eal_thread_dump_affinity(cpuset, RTE_CPU_AFFINITY_STR_LEN);
+ 
+-	RTE_LOG(DEBUG, EAL, "lcore %u is ready (tid=%x;cpuset=[%s%s])\n",
+-		lcore_id, (int)thread_id, cpuset, ret == 0 ? "" : "...");
++	RTE_LOG(DEBUG, EAL, "lcore %u is ready (tid=%"PRIxPTR";cpuset=[%s%s])\n",
++		lcore_id, (intptr_t)thread_id, cpuset, ret == 0 ? "" : "...");
+ 
+ 	/* read on our pipe to get commands */
+ 	while (1) {
+--- dpdk-stable-18.02.1/lib/librte_eal/linuxapp/eal/eal_vfio_mp_sync.c
++++ dpdk-stable-18.02.1-musl/lib/librte_eal/linuxapp/eal/eal_vfio_mp_sync.c
+@@ -44,10 +44,10 @@
+ 			(chdr).cmsg_len = CMSGLEN;\
+ 			(chdr).cmsg_level = SOL_SOCKET;\
+ 			(chdr).cmsg_type = SCM_RIGHTS;\
+-			memcpy((chdr).__cmsg_data, &(fd), sizeof(fd));\
++			memcpy(CMSG_DATA(&chdr), &(fd), sizeof(fd));\
+ 		} while (0)
+ #define CMSGHDR_TO_FD(chdr, fd) \
+-			memcpy(&(fd), (chdr).__cmsg_data, sizeof(fd))
++			memcpy(&(fd), CMSG_DATA(&chdr), sizeof(fd))
+ 
+ static pthread_t socket_thread;
+ static int mp_socket_fd;

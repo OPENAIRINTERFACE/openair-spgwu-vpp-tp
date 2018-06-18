@@ -150,7 +150,20 @@ else
 DPDK_EXTRA_CFLAGS := -g -O0
 endif
 
+ifeq ($(AESNI),y)
+IPSEC_MB_BUILD_PATH := $(B)/intel-ipsec-mb-$(IPSEC_MB_VER)
+DPDK_EXTRA_CFLAGS += -L$(IPSEC_MB_BUILD_PATH) -I$(IPSEC_MB_BUILD_PATH)
+endif
+
 DPDK_MAKE_EXTRA_ARGS += AESNI_MULTI_BUFFER_LIB_PATH=$(AESNIMB_LIB_SOURCE)
+
+DPDK_RTE_BACKTRACE := y
+OS_ID = $(shell grep '^ID=' /etc/os-release | cut -f2- -d= | sed -e 's/\"//g')
+ifeq ($(OS_ID),alpine)
+DPDK_EXTRA_CFLAGS += -D_GNU_SOURCE
+DPDK_RTE_BACKTRACE := n
+endif
+
 
 # assemble DPDK make arguments
 DPDK_MAKE_ARGS := -C $(DPDK_SOURCE) -j $(JOBS) \
@@ -219,6 +232,7 @@ $(B)/custom-config: $(B)/.patch.ok Makefile
 	$(call set,RTE_LIBRTE_DPAA_PMD,n)
 	$(call set,RTE_LIBRTE_PMD_DPAA_SEC,n)
 	$(call set,RTE_LIBRTE_PMD_DPAA_EVENTDEV,n)
+	$(call set,RTE_BACKTRACE,$(DPDK_RTE_BACKTRACE))
 	@rm -f .config.ok
 
 $(CURDIR)/$(DPDK_TARBALL):
