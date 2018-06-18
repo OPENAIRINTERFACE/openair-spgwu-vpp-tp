@@ -38,6 +38,10 @@
 #ifndef included_time_h
 #define included_time_h
 
+#define _GNU_SOURCE
+
+#include <unistd.h>
+#include <sys/syscall.h>
 #include <vppinfra/clib.h>
 
 typedef struct

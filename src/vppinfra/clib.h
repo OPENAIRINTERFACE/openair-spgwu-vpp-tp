@@ -55,6 +55,16 @@
 #define NULL ((void *) 0)
 #endif
 
+/* MUSL compat define */
+#if !defined(__GNUC_PREREQ)
+#if defined(__GNUC__)
+#define	__GNUC_PREREQ(__maj, __min)	\
+	(__GNUC__ > (__maj) || __GNUC__ == (__maj) && __GNUC_MINOR__ >= (__min))
+#else
+#define	__GNUC_PREREQ(__maj, __min) 0
+#endif
+#endif
+
 #define BITS(x)		(8*sizeof(x))
 #define ARRAY_LEN(x)	(sizeof (x)/sizeof (x[0]))
 

@@ -17,14 +17,14 @@ RUN mkdir /src && \
     apk add --no-cache gcc build-base automake autoconf ccache \
 		       libtool pkgconf make linux-headers \
 		       git pkgconfig openssl-dev numactl-dev \
-		       boost-dev libffi-dev \
-		       userspace-rcu-dev
+		       boost-dev libffi-dev userspace-rcu-dev \
+		       bison file openssl patch libbsd-dev \
+		       findutils tar xz mbedtls-dev py2-pip &&
+    pip install ply
+
 ADD . /src/vpp
-RUN apk add --no-cache bison
-RUN apk add --no-cache file
 RUN cd /src/vpp && \
-    make bootstrap V=1 && \
-    make build-release V=1 && \
+    enable_japi=no make build-release V=1 CFLAGS="-D_GNU_SOURCE -DMUSL" && \
     make install DESTDIR=/src/vpp/build && \
     ls -lR build && \
     ldd /src/vpp/build/usr/bin/vpp

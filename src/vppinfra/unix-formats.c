@@ -44,8 +44,6 @@
 
 #define _GNU_SOURCE		/* to get REG_* in ucontext.h */
 #include <ucontext.h>
-#undef _GNU_SOURCE
-#undef __USE_GNU
 
 #include <unistd.h>
 #include <signal.h>

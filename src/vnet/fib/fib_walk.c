@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include <sys/types.h>
 #include <vnet/fib/fib_walk.h>
 #include <vnet/fib/fib_node_list.h>
 

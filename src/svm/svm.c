@@ -737,8 +737,10 @@ svm_map_region (svm_map_region_args_t * a)
 	    ("region %s mutex held by dead pid %d, tag %d, force unlock",
 	     rp->region_name, pid_holding_region_lock, rp->mutex_owner_tag);
 	  /* owner pid is nonexistent */
+#if !defined(MUSL)
 	  rp->mutex.__data.__owner = 0;
 	  rp->mutex.__data.__lock = 0;
+#endif
 	  dead_region_recovery = 1;
 	}
 

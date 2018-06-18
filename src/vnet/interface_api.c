@@ -264,7 +264,10 @@ vl_api_sw_interface_dump_t_handler (vl_api_sw_interface_dump_t * mp)
       filter = format (0, "%s%c", mp->name_filter, 0);
     }
 
+#if !defined(MUSL)
   char *strcasestr (char *, char *);	/* lnx hdr file botch */
+#endif
+
   /* *INDENT-OFF* */
   pool_foreach (swif, im->sw_interfaces,
   ({

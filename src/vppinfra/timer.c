@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <linux/param.h>
 
 #include <vppinfra/vec.h>
 #include <vppinfra/smp.h>

@@ -91,6 +91,9 @@ typedef struct _socket_t
 /* socket config format is host:port.
    Unspecified port causes a free one to be chosen starting
    from IPPORT_USERRESERVED (5000). */
+#if !defined(IPPORT_USERRESERVED)
+#define IPPORT_USERRESERVED 5000
+#endif
 clib_error_t *clib_socket_init (clib_socket_t * socket);
 
 clib_error_t *clib_socket_accept (clib_socket_t * server,
