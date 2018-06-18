@@ -33,6 +33,13 @@
 #include <gtp-up/gtp_up_sx.h>
 #include <gtp-up/gtp_up_http_redirect_server.h>
 
+#if CLIB_DEBUG > 0
+#define gtp_debug clib_warning
+#else
+#define gtp_debug(...)				\
+  do { } while (0)
+#endif
+
 /* Statistics (not all errors) */
 #define foreach_gtp_up_classify_error    \
 _(CLASSIFY, "good packets classify")
@@ -102,8 +109,6 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
   u32 sidx = 0;
   u32 len;
   struct rules *active;
-  ip4_header_t *ip4;
-  ip6_header_t *ip6;
   struct rte_acl_ctx *acl;
   uint32_t results[1]; /* make classify by 4 categories. */
   const u8 *data[4];
@@ -182,10 +187,12 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	      if (is_ip4)
 		{
-		  ip4 = (ip4_header_t *)pl;
+#if CLIB_DEBUG > 0
+		  ip4_header_t *ip4 = (ip4_header_t *)pl;
+#endif
 
 		  rte_acl_classify(acl, data, results, 1, 1);
-		  clib_warning("Ctx: %p, src: %U, dst %U, r: %d\n",
+		  gtp_debug("Ctx: %p, src: %U, dst %U, r: %d\n",
 			       acl,
 			       format_ip4_address, &ip4->src_address,
 			       format_ip4_address, &ip4->dst_address,
@@ -201,10 +208,12 @@ gtp_up_classify (vlib_main_t * vm, vlib_node_runtime_t * node,
 		}
 	      else
 		{
-		  ip6 = (ip6_header_t *)pl;
+#if CLIB_DEBUG > 0
+		  ip6_header_t *ip6 = (ip6_header_t *)pl;
+#endif
 
 		  rte_acl_classify(acl, data, results, 1, 1);
-		  clib_warning("Ctx: %p, src: %U, dst %U, r: %d\n",
+		  gtp_debug("Ctx: %p, src: %U, dst %U, r: %d\n",
 			       acl,
 			       format_ip6_address, &ip6->src_address,
 			       format_ip6_address, &ip6->dst_address,

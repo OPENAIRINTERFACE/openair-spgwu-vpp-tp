@@ -30,6 +30,13 @@
 #include <gtp-up/gtp_up.h>
 #include <gtp-up/gtp_up_sx.h>
 
+#if CLIB_DEBUG > 0
+#define gtp_debug clib_warning
+#else
+#define gtp_debug(...)				\
+  do { } while (0)
+#endif
+
 /* Statistics (not all errors) */
 #define foreach_gtp_up_if_input_error    \
 _(IF_INPUT, "good packets if_input")
@@ -95,7 +102,6 @@ gtp_up_if_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * fr
   u32 stats_sw_if_index, stats_n_packets, stats_n_bytes;
   u32 sw_if_index = 0;
   u32 next = 0;
-  vnet_hw_interface_t * hi;
   u32 sidx = 0;
   u8 intf_type = ~0;
   u32 len;
@@ -127,11 +133,11 @@ gtp_up_if_input (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * fr
 
 	  /* Get next node index and adj index from tunnel next_dpo */
 	  sw_if_index = vnet_buffer(b)->sw_if_index[VLIB_TX];
-	  hi = vnet_get_sup_hw_interface (vnm, sw_if_index);
 	  sidx = gtm->session_index_by_sw_if_index[sw_if_index];
 	  intf_type = gtm->intf_type_by_sw_if_index[vnet_buffer(b)->sw_if_index[VLIB_RX]];
 
-	  clib_warning("Hi: %p, Session %d", hi, sidx);
+	  gtp_debug("HW If: %p, Session %d",
+		    vnet_get_sup_hw_interface (vnm, sw_if_index), sidx);
 
 	  vnet_buffer (b)->gtpu.session_index = sidx;
 	  vnet_buffer (b)->gtpu.data_offset = 0;

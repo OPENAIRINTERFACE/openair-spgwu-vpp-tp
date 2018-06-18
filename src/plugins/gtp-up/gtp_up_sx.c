@@ -42,6 +42,13 @@
 #include "gtp_up_sx.h"
 #include "gtp_up_sx_api.h"
 
+#if CLIB_DEBUG > 0
+#define gtp_debug clib_warning
+#else
+#define gtp_debug(...)				\
+  do { } while (0)
+#endif
+
 gtp_up_main_t gtp_up_main;
 
 #define SESS_CREATE 0
@@ -995,7 +1002,7 @@ static void sx_add_del_v4_teid(const void *teid, void *si, int is_add)
   kv.key = v4_teid->as_u64;
   kv.value = sess - gtm->sessions;
 
-  clib_warning("gtp_up_sx: is_add: %d, TEID: 0x%08x, IP:%U, Session:%p, idx: %p.",
+  gtp_debug("gtp_up_sx: is_add: %d, TEID: 0x%08x, IP:%U, Session:%p, idx: %p.",
 	       is_add, v4_teid->teid,
 	       format_ip4_address, &v4_teid->dst, sess,
 	       sess - gtm->sessions);
@@ -1015,7 +1022,7 @@ static void sx_add_del_v6_teid(const void *teid, void *si, int is_add)
   kv.key[2] = v6_teid->teid;
   kv.value = sess - gtm->sessions;
 
-  clib_warning("gtp_up_sx: is_add: %d, TEID: 0x%08x, IP:%U, Session:%p, idx: %p.",
+  gtp_debug("gtp_up_sx: is_add: %d, TEID: 0x%08x, IP:%U, Session:%p, idx: %p.",
 	       is_add, v6_teid->teid,
 	       format_ip6_address, &v6_teid->dst, sess,
 	       sess - gtm->sessions);
@@ -1512,14 +1519,14 @@ static int sx_acl_build(struct rules *rules, int direction)
       if (rte_acl_build(ctx->ip4, &cfg) != 0)
 	{
 	  // TODO: ctx without rules will fail, find some other way to handle that
-	  clib_warning("RTE ACL %s IPv4 build failed, no need to worry!",
+	  gtp_debug("RTE ACL %s IPv4 build failed, no need to worry!",
 		       direction == UL_SDF ? "UL" : "DL");
 	  rte_acl_free(ctx->ip4);
 	  ctx->ip4 = NULL;
 	}
       else
 	{
-	  clib_warning("RTE ACL %s IPv4 build SUCCEEDED!",
+	  gtp_debug("RTE ACL %s IPv4 build SUCCEEDED!",
 		       direction == UL_SDF ? "UL" : "DL");
 	  rte_acl_dump(ctx->ip4);
 	}
@@ -1537,7 +1544,7 @@ static int sx_acl_build(struct rules *rules, int direction)
       if (rte_acl_build(ctx->ip6, &cfg) != 0)
 	{
 	  // TODO: ctx without rules will fail, find some other way to handle that
-	  clib_warning("RTE ACL %s IPv6 build failed, no need to worry!",
+	  gtp_debug("RTE ACL %s IPv6 build failed, no need to worry!",
 		       direction == UL_SDF ? "UL" : "DL");
 	  rte_acl_free(ctx->ip6);
 	  ctx->ip6 = NULL;
@@ -1545,7 +1552,7 @@ static int sx_acl_build(struct rules *rules, int direction)
       else
 	{
 	  rte_acl_dump(ctx->ip6);
-	  clib_warning("RTE ACL %s IPv6 build SUCCEEDED!",
+	  gtp_debug("RTE ACL %s IPv6 build SUCCEEDED!",
 		       direction == UL_SDF ? "UL" : "DL");
 	}
     }
@@ -1804,7 +1811,7 @@ int sx_update_apply(gtp_up_session_t *sx)
 	  if (!(far = vec_bsearch(&r, active->far, sx_far_id_compare)))
 	    continue;
 
-	  clib_warning("TODO: send_end_marker for FAR %d", far->id);
+	  gtp_debug("TODO: send_end_marker for FAR %d", far->id);
 	  gtpu_send_end_marker(&far->forward);
 	}
       vec_free(pending->send_end_marker);

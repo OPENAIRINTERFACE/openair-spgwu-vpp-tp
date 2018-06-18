@@ -30,6 +30,13 @@
 #include "gtp_up_sx_server.h"
 #include "gtp_up_sx_api.h"
 
+#if CLIB_DEBUG > 0
+#define gtp_debug clib_warning
+#else
+#define gtp_debug(...)				\
+  do { } while (0)
+#endif
+
 typedef enum
 {
   EVENT_RX = 1,
@@ -143,10 +150,10 @@ sx_process (vlib_main_t * vm,
 	  break;
 #endif
 	case ~0:                /* timeout */
-	  clib_warning ("timeout....");
+	  gtp_debug ("timeout....");
 	  break;
 	default:
-	  clib_warning ("event %ld, %p. ", event_type, event_data[0]);
+	  gtp_debug ("event %ld, %p. ", event_type, event_data[0]);
 	  break;
 	}
 
@@ -194,7 +201,7 @@ void gtp_up_sx_handle_input (vlib_main_t * vm, vlib_buffer_t *b, int is_ip4)
   msg->data = vec_new(u8, vlib_buffer_length_in_chain (vm, b));
   vlib_buffer_contents (vm, vlib_get_buffer_index (vm, b), msg->data);
 
-  clib_warning ("sending event %p %U:%d - %U:%d, data %p", msg,
+  gtp_debug ("sending event %p %U:%d - %U:%d, data %p", msg,
 		format_ip46_address, &msg->rmt.address, IP46_TYPE_ANY,
 		clib_net_to_host_u16(msg->rmt.port),
 		format_ip46_address, &msg->lcl.address, IP46_TYPE_ANY,
@@ -210,9 +217,7 @@ gtp_up_sx_server_notify(sx_msg_t * msg)
   sx_server_main_t *sx = &sx_server_main;
   vlib_main_t *vm = sx->vlib_main;
 
-  clib_warning ("called...");
-
-  clib_warning ("sending NOTIFY event %p", msg);
+  gtp_debug ("sending NOTIFY event %p", msg);
   vlib_process_signal_event_mt(vm, sx->node_index, EVENT_NOTIFY, (uword)msg);
 }
 
@@ -250,7 +255,7 @@ sx_server_main_init (vlib_main_t * vm)
   udp_register_dst_port (vm, UDP_DST_PORT_SX,
 			 sx6_input_node.index, /* is_ip4 */ 0);
 
-  clib_warning ("PFCP: start_time: %p, %d, %x.", sx, sx->start_time, sx->start_time);
+  gtp_debug ("PFCP: start_time: %p, %d, %x.", sx, sx->start_time, sx->start_time);
   return 0;
 }
 

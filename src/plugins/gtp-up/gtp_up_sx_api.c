@@ -40,7 +40,13 @@
 #include "gtp_up_sx_server.h"
 #include "gtp_up_sx_api.h"
 
-#define DEBUG
+#if CLIB_DEBUG > 0
+#define gtp_debug clib_warning
+#else
+#define gtp_debug(...)				\
+  do { } while (0)
+#endif
+
 #define API_VERSION      1
 
 typedef struct {
@@ -94,13 +100,13 @@ int gtp_up_sx_handle_msg(sx_msg_t * msg)
   if (len < 4)
     return -1;
 
-  clib_warning ("%U", format_pfcp_msg_hdr, msg->hdr);
+  gtp_debug ("%U", format_pfcp_msg_hdr, msg->hdr);
 
   if (msg->hdr->version != 1)
     {
       sx_msg_t * resp = NULL;
 
-      clib_warning ("PFCP: msg version invalid: %d.", msg->hdr->version);
+      gtp_debug ("PFCP: msg version invalid: %d.", msg->hdr->version);
 
       resp = make_response(msg, sizeof(pfcp_header_t));
 
@@ -117,7 +123,7 @@ int gtp_up_sx_handle_msg(sx_msg_t * msg)
       (!msg->hdr->s_flag && len < offsetof(pfcp_header_t, msg_hdr.ies)) ||
       (msg->hdr->s_flag && len < offsetof(pfcp_header_t, session_hdr.ies)))
     {
-      clib_warning ("PFCP: msg length invalid, data %d, msg %d.",
+      gtp_debug ("PFCP: msg length invalid, data %d, msg %d.",
 		    len, clib_net_to_host_u16(msg->hdr->length));
       return -1;
     }
@@ -152,7 +158,7 @@ int gtp_up_sx_handle_msg(sx_msg_t * msg)
       return session_msg(msg);
 
     default:
-      clib_warning ("PFCP: msg type invalid: %d.", msg->hdr->type);
+      gtp_debug ("PFCP: msg type invalid: %d.", msg->hdr->type);
       break;
     }
 
@@ -440,7 +446,7 @@ handle_heartbeat_request(sx_msg_t * req, pfcp_heartbeat_request_t *msg)
   SET_BIT(resp.grp.fields, HEARTBEAT_RESPONSE_RECOVERY_TIME_STAMP);
   resp.recovery_time_stamp = sx->start_time;
 
-  clib_warning ("PFCP: start_time: %p, %d, %x.",
+  gtp_debug ("PFCP: start_time: %p, %d, %x.",
 		&sx, sx->start_time, sx->start_time);
 
   send_response(req, 0, PFCP_HEARTBEAT_RESPONSE, &resp.grp);
@@ -619,7 +625,7 @@ static int node_msg(sx_msg_t * msg)
 
   if (msg->hdr->s_flag)
     {
-      clib_warning ("PFCP: node msg with SEID.");
+      gtp_debug ("PFCP: node msg with SEID.");
       return -1;
     }
 
@@ -831,7 +837,7 @@ static int handle_create_pdr(gtp_up_session_t *sess, pfcp_create_pdr_t *create_p
 	  unformat_init_vector(&sdf, pdr->pdi.sdf_filter.flow);
 	  if (!unformat_ipfilter(&sdf, &create->pdi.acl))
 	    {
-	      clib_warning("failed to parse SDF '%s'", pdr->pdi.sdf_filter.flow);
+	      gtp_debug("failed to parse SDF '%s'", pdr->pdi.sdf_filter.flow);
 	      r = -1;
 	      break;
 	    }
@@ -942,7 +948,7 @@ static int handle_update_pdr(gtp_up_session_t *sess, pfcp_update_pdr_t *update_p
 	  unformat_init_vector(&sdf, pdr->pdi.sdf_filter.flow);
 	  if (!unformat_ipfilter(&sdf, &update->pdi.acl))
 	    {
-	      clib_warning("failed to parse SDF '%s'", pdr->pdi.sdf_filter.flow);
+	      gtp_debug("failed to parse SDF '%s'", pdr->pdi.sdf_filter.flow);
 	      r = -1;
 	      break;
 	    }
@@ -1823,7 +1829,7 @@ static int session_msg(sx_msg_t * msg)
 
   if (!msg->hdr->s_flag)
     {
-      clib_warning ("PFCP: session msg without SEID.");
+      gtp_debug ("PFCP: session msg without SEID.");
       return -1;
     }
 

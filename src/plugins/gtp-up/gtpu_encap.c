@@ -81,7 +81,6 @@ void gtpu_send_end_marker(gtp_up_far_forward_t * forward)
   vlib_main_t *vm = gtm->vlib_main;
   u32 bi = 0;
   vlib_buffer_t *p0;
-  u32 next0;
   vlib_buffer_free_list_t *fl;
   gtp_up_peer_t * peer0 = NULL;
   u8 is_ip4;
@@ -102,7 +101,6 @@ void gtpu_send_end_marker(gtp_up_far_forward_t * forward)
   VLIB_BUFFER_TRACE_TRAJECTORY_INIT (p0);
 
   peer0 = pool_elt_at_index (gtm->peers, forward->peer_idx);
-  next0 = peer0->next_dpo.dpoi_next_node;
   vnet_buffer (p0)->sw_if_index[VLIB_TX] = peer0->encap_fib_index;
   vnet_buffer(p0)->ip.adj_index[VLIB_TX] = peer0->next_dpo.dpoi_index;
 
@@ -159,7 +157,6 @@ void gtpu_send_end_marker(gtp_up_far_forward_t * forward)
       next_index = ip6_lookup_node.index;
     }
 
-  clib_warning("Next: %d, NextIndex: %d", next0, next_index);
   /* Enqueue the packet right now */
   f = vlib_get_frame_to_node (vm, next_index);
   to_next = vlib_frame_vector_args (f);
