@@ -94,6 +94,7 @@ struct pfcp_ie_def {
       struct pfcp_group_ie_def *group;
     };
     struct {
+      u8 * (* format)(u8 *, va_list *);
       int (* decode)(u8 *, u16 length, void *);
       int (* encode)(void *, u8 **);
       void (* free)(void *);
@@ -345,6 +346,10 @@ typedef u32 pfcp_pfd_contents_t;
 
 #define PFCP_IE_MEASUREMENT_METHOD			62
 typedef u8 pfcp_measurement_method_t;
+
+#define MEASUREMENT_METHOD_DURATION			BIT(0)
+#define MEASUREMENT_METHOD_VOLUME			BIT(1)
+#define MEASUREMENT_METHOD_EVENT			BIT(2)
 
 #define PFCP_IE_USAGE_REPORT_TRIGGER			63
 typedef u32 pfcp_usage_report_trigger_t;

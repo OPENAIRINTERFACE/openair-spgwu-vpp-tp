@@ -39,15 +39,12 @@
 
 #include "pfcp.h"
 
-#define DEBUG_PFCP
-
-#ifdef DEBUG_PFCP
+#if CLIB_DEBUG > 0
 #define pfcp_debug clib_warning
 #else
 #define pfcp_debug(...)				\
   do { } while (0)
 #endif
-#define pfcp_warning clib_warning
 
 /*************************************************************************/
 
@@ -185,6 +182,7 @@ static const char *ie_desc[] =
     [PFCP_IE_METRIC] = "Metric",
     [PFCP_IE_OVERLOAD_CONTROL_INFORMATION] = "Overload Control Information",
     [PFCP_IE_TIMER] = "Timer",
+    [PFCP_IE_PDR_ID] = "PDR Id",
     [PFCP_IE_F_SEID] = "F-SEID",
     [PFCP_IE_APPLICATION_ID_PFDS] = "Application ID PFDs",
     [PFCP_IE_PFD] = "PFD",
@@ -444,8 +442,17 @@ format_pfcp_ie(u8 * s, va_list * args)
 
 /* generic IEs */
 
-static int decode_volume_ie(u8 *data, u16 length, pfcp_volume_ie_t *v)
+static u8 * format_volume_ie(u8 * s, va_list * args)
 {
+  pfcp_volume_ie_t *v = va_arg (*args, pfcp_volume_ie_t *);
+
+  return format (s, "T:%d,U:%d,D:%d", v->total, v->ul, v->dl);
+}
+
+static int decode_volume_ie(u8 *data, u16 length, void *p)
+{
+  pfcp_volume_ie_t *v = (pfcp_volume_ie_t *)p;
+
   if (length < 1)
     return PFCP_CAUSE_INVALID_LENGTH;
 
@@ -464,8 +471,10 @@ static int decode_volume_ie(u8 *data, u16 length, pfcp_volume_ie_t *v)
   return 0;
 }
 
-static int encode_volume_ie(pfcp_volume_ie_t *v, u8 **vec)
+static int encode_volume_ie(void *p, u8 **vec)
 {
+  pfcp_volume_ie_t *v = (pfcp_volume_ie_t *)p;
+
   put_u8(*vec, v->fields);
 
   if (v->fields & 0x01)                            /* Total Volume */
@@ -478,8 +487,18 @@ static int encode_volume_ie(pfcp_volume_ie_t *v, u8 **vec)
   return 0;
 }
 
-static int decode_time_stamp_ie(u8 *data, u16 length, u32 *v)
+static u8 * format_time_stamp(u8 * s, va_list * args)
 {
+  u32 *v = va_arg (*args, u32 *);
+  struct timeval tv = { .tv_sec = *v, .tv_usec = 0};
+
+  return format (s, "%U", format_timeval, 0, &tv);
+}
+
+static int decode_time_stamp_ie(u8 *data, u16 length, void *p)
+{
+  u32 *v = (u32 *)p;
+
   if (length != 4)
     return PFCP_CAUSE_INVALID_LENGTH;
 
@@ -492,8 +511,10 @@ static int decode_time_stamp_ie(u8 *data, u16 length, u32 *v)
   return 0;
 }
 
-static int encode_time_stamp_ie(u32 *v, u8 **vec)
+static int encode_time_stamp_ie(void *p, u8 **vec)
 {
+  u32 *v = (u32 *)p;
+
   if (*v >= 2085978496)
     put_u32(*vec, *v - 2085978496);
   else
@@ -504,6 +525,13 @@ static int encode_time_stamp_ie(u32 *v, u8 **vec)
 
 /* Information Elements */
 
+static u8 * format_cause(u8 * s, va_list * args)
+{
+  pfcp_cause_t *v = va_arg (*args, pfcp_cause_t *);
+
+  return format(s, "%d", *v);
+}
+
 static int decode_cause(u8 *data, u16 length, void *p)
 {
   pfcp_cause_t *v = p;
@@ -513,7 +541,6 @@ static int decode_cause(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_debug ("PFCP: Cause: %d.", *v);
   return 0;
 }
 
@@ -521,10 +548,22 @@ static int encode_cause(void *p, u8 **vec)
 {
   pfcp_cause_t *v = p;
 
-  pfcp_debug ("PFCP: Cause: %d.", *v);
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static char *source_interface_name[] = {
+  [0] = "Access",
+  [1] = "Core",
+  [2] = "SGi-LAN",
+  [3] = "CP-Function",
+};
+
+static u8 * format_source_interface(u8 * s, va_list * args)
+{
+  pfcp_source_interface_t *v = va_arg (*args, pfcp_source_interface_t *);
+
+  return format(s, "%s", source_interface_name[*v]);
 }
 
 static int decode_source_interface(u8 *data, u16 length, void *p)
@@ -538,7 +577,6 @@ static int decode_source_interface(u8 *data, u16 length, void *p)
   if (*v >= 4)
     return PFCP_CAUSE_REQUEST_REJECTED;
 
-  pfcp_debug ("PFCP: Source Interface: %d.", *v);
   return 0;
 }
 
@@ -546,30 +584,32 @@ static int encode_source_interface(void *p, u8 **vec)
 {
   pfcp_source_interface_t *v = p;
 
-  pfcp_debug ("PFCP: Source Interface: %d.", *v);
-
   put_u8(*vec, *v & 0x0f);
   return 0;
 }
 
-static void debug_f_teid(pfcp_f_teid_t *v)
+static u8 * format_f_teid(u8 * s, va_list * args)
 {
+  pfcp_f_teid_t *v = va_arg (*args, pfcp_f_teid_t *);
+
   if ((v->flags & 0xf) == F_TEID_V4)
-      pfcp_debug ("PFCP: F-TEID: %d,IPv4:%U.",
-		    v->teid, format_ip4_address, &v->ip4);
+    s = format (s, "%d,IPv4:%U",
+		v->teid, format_ip4_address, &v->ip4);
   else if ((v->flags & 0xf) == F_TEID_V6)
-      pfcp_debug ("PFCP: F-TEID: %d,IPv6:%U.",
-		    v->teid, format_ip6_address, &v->ip6);
+    s = format (s, "%d,IPv6:%U",
+		v->teid, format_ip6_address, &v->ip6);
   else if ((v->flags & 0xf) == (F_TEID_V4 | F_TEID_V6))
-      pfcp_debug ("PFCP: F-TEID: %d,IPv4:%U,IPv6:%U.",
-		    v->teid, format_ip4_address, &v->ip4,
-		    format_ip6_address, &v->ip6);
+    s = format (s, "%d,IPv4:%U,IPv6:%U",
+		v->teid, format_ip4_address, &v->ip4,
+		format_ip6_address, &v->ip6);
   else if ((v->flags & 0xf) == F_TEID_CH)
-    pfcp_debug ("PFCP: F-TEID: %d,CH:1.", v->teid);
+    s = format (s, "%d,CH:1", v->teid);
   else if ((v->flags & 0xf) == (F_TEID_CH | F_TEID_CHID))
-    pfcp_debug ("PFCP: F-TEID: %d,CH:1,CHID:%d.", v->teid, v->choose_id);
+    s = format (s, "%d,CH:1,CHID:%d", v->teid, v->choose_id);
   else
-    pfcp_debug ("PFCP: F-TEID with invalid flags: %02x.", v->flags);
+    s = format (s, "invalid flags: %02x", v->flags);
+
+  return s;
 }
 
 static int decode_f_teid(u8 *data, u16 length, void *p)
@@ -583,13 +623,11 @@ static int decode_f_teid(u8 *data, u16 length, void *p)
   v->teid = get_u32(data);
   length -= 5;
 
-  pfcp_debug ("PFCP: F-TEID, Len: %d, TEID: %d, Flags: %02x.", length, v->teid, v->flags);
-
   if (v->flags & F_TEID_CH)
     {
       if (v->flags & (F_TEID_V4 | F_TEID_V6))
 	{
-	  pfcp_warning ("PFCP: F-TEID with invalid flags (CH and v4/v6): %02x.", v->flags);
+	  pfcp_debug ("PFCP: F-TEID with invalid flags (CH and v4/v6): %02x.", v->flags);
 	  return -1;
 	}
     }
@@ -597,12 +635,12 @@ static int decode_f_teid(u8 *data, u16 length, void *p)
     {
       if (v->flags & F_TEID_CHID)
 	{
-	  pfcp_warning ("PFCP: F-TEID with invalid flags (CHID without CH): %02x.", v->flags);
+	  pfcp_debug ("PFCP: F-TEID with invalid flags (CHID without CH): %02x.", v->flags);
 	  return -1;
 	}
       if (!(v->flags & (F_TEID_V4 | F_TEID_V6)))
 	{
-	  pfcp_warning ("PFCP: F-TEID without v4/v6 address: %02x.", v->flags);
+	  pfcp_debug ("PFCP: F-TEID without v4/v6 address: %02x.", v->flags);
 	  return -1;
 	}
     }
@@ -633,15 +671,12 @@ static int decode_f_teid(u8 *data, u16 length, void *p)
       v->choose_id = get_u8(data);
     }
 
-  debug_f_teid(v);
   return 0;
 }
 
 static int encode_f_teid(void *p, u8 **vec)
 {
   pfcp_f_teid_t *v = p;
-
-  debug_f_teid(v);
 
   put_u8(*vec, v->flags);
   put_u32(*vec, v->teid);
@@ -661,16 +696,11 @@ static int decode_network_instance(u8 *data, u16 length, void *p)
   vec_reset_length(*v);
   vec_add(*v, data, length);
 
-  pfcp_debug ("PFCP: Network Instance: '%U'", format_network_instance, *v);
   return 0;
 }
 
 static int encode_network_instance(void *p, u8 **vec)
 {
-  pfcp_network_instance_t *v = p;
-
-  pfcp_debug ("PFCP: Network Instance: '%U'", format_network_instance, *v);
-
   vec_append(*vec, p);
 
   return 0;
@@ -683,9 +713,11 @@ static void free_network_instance(void *p)
   vec_free(*v);
 }
 
-static void debug_sdf_filter(pfcp_sdf_filter_t *v)
+static u8 * format_sdf_filter(u8 * s, va_list * args)
 {
-  return;
+  pfcp_sdf_filter_t *v = va_arg (*args, pfcp_sdf_filter_t *);
+
+  return format(s, "%U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_sdf_filter(u8 *data, u16 length, void *p)
@@ -744,15 +776,12 @@ static int decode_sdf_filter(u8 *data, u16 length, void *p)
       length -= 3;
     }
 
-  debug_sdf_filter(v);
   return 0;
 }
 
 static int encode_sdf_filter(void *p, u8 **vec)
 {
   pfcp_sdf_filter_t *v = p;
-
-  debug_sdf_filter(v);
 
   put_u8(*vec, v->flags & 0x0f);
   if (v->flags & F_SDF_FD)
@@ -777,11 +806,17 @@ static void free_sdf_filter(void *p)
   vec_free(v->flow);
 }
 
+static u8 * format_application_id(u8 * s, va_list * args)
+{
+  pfcp_application_id_t *v = va_arg (*args, pfcp_application_id_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
+}
+
 static int decode_application_id(u8 *data, u16 length, void *p)
 {
   pfcp_application_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_application_id");
   return 0;
 }
 
@@ -789,15 +824,20 @@ static int encode_application_id(void *p, u8 **vec)
 {
   pfcp_application_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_application_id");
   return 0;
+}
+
+static u8 * format_gate_status(u8 * s, va_list * args)
+{
+  pfcp_gate_status_t *v = va_arg (*args, pfcp_gate_status_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_gate_status(u8 *data, u16 length, void *p)
 {
   pfcp_gate_status_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_gate_status");
   return 0;
 }
 
@@ -805,15 +845,20 @@ static int encode_gate_status(void *p, u8 **vec)
 {
   pfcp_gate_status_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_gate_status");
   return 0;
+}
+
+static u8 * format_mbr(u8 * s, va_list * args)
+{
+  pfcp_mbr_t *v = va_arg (*args, pfcp_mbr_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_mbr(u8 *data, u16 length, void *p)
 {
   pfcp_mbr_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_mbr");
   return 0;
 }
 
@@ -821,15 +866,20 @@ static int encode_mbr(void *p, u8 **vec)
 {
   pfcp_mbr_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_mbr");
   return 0;
+}
+
+static u8 * format_gbr(u8 * s, va_list * args)
+{
+  pfcp_gbr_t *v = va_arg (*args, pfcp_gbr_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_gbr(u8 *data, u16 length, void *p)
 {
   pfcp_gbr_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_gbr");
   return 0;
 }
 
@@ -837,15 +887,20 @@ static int encode_gbr(void *p, u8 **vec)
 {
   pfcp_gbr_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_gbr");
   return 0;
+}
+
+static u8 * format_qer_correlation_id(u8 * s, va_list * args)
+{
+  pfcp_qer_correlation_id_t *v = va_arg (*args, pfcp_qer_correlation_id_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_qer_correlation_id(u8 *data, u16 length, void *p)
 {
   pfcp_qer_correlation_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_qer_correlation_id");
   return 0;
 }
 
@@ -853,8 +908,14 @@ static int encode_qer_correlation_id(void *p, u8 **vec)
 {
   pfcp_qer_correlation_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_qer_correlation_id");
   return 0;
+}
+
+static u8 * format_precedence(u8 * s, va_list * args)
+{
+  pfcp_precedence_t *v = va_arg (*args, pfcp_precedence_t *);
+
+  return format(s, "%d", *v);
 }
 
 static int decode_precedence(u8 *data, u16 length, void *p)
@@ -866,7 +927,6 @@ static int decode_precedence(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: Precedence: %d.", *v);
   return 0;
 }
 
@@ -874,17 +934,21 @@ static int encode_precedence(void *p, u8 **vec)
 {
   pfcp_precedence_t *v = p;
 
-  pfcp_debug ("PFCP: Measurement Method: %d.", *v);
-
   put_u32(*vec, *v);
   return 0;
+}
+
+static u8 * format_transport_level_marking(u8 * s, va_list * args)
+{
+  pfcp_transport_level_marking_t *v = va_arg (*args, pfcp_transport_level_marking_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_transport_level_marking(u8 *data, u16 length, void *p)
 {
   pfcp_transport_level_marking_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_transport_level_marking");
   return 0;
 }
 
@@ -892,34 +956,24 @@ static int encode_transport_level_marking(void *p, u8 **vec)
 {
   pfcp_transport_level_marking_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_transport_level_marking");
   return 0;
 }
 
-static int decode_volume_threshold(u8 *data, u16 length, void *p)
+#define format_volume_threshold format_volume_ie
+#define decode_volume_threshold decode_volume_ie
+#define encode_volume_threshold encode_volume_ie
+
+static u8 * format_time_threshold(u8 * s, va_list * args)
 {
-  pfcp_volume_threshold_t *v = p;
-  int r;
+  pfcp_time_threshold_t *v = va_arg (*args, pfcp_time_threshold_t *);
 
-  if ((r = decode_volume_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Volume Threshold: T:%d,U:%d,D:%d", v->total, v->ul, v->dl);
-
-  return r;
-}
-
-static int encode_volume_threshold(void *p, u8 **vec)
-{
-  pfcp_volume_threshold_t *v = p;
-
-  pfcp_debug ("PFCP: Volume Threshold: T:%d,U:%d,D:%d", v->total, v->ul, v->dl);
-  return encode_volume_ie(v, vec);
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_time_threshold(u8 *data, u16 length, void *p)
 {
   pfcp_time_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_time_threshold");
   return 0;
 }
 
@@ -927,35 +981,24 @@ static int encode_time_threshold(void *p, u8 **vec)
 {
   pfcp_time_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_time_threshold");
   return 0;
 }
 
-static int decode_monitoring_time(u8 *data, u16 length, void *p)
+#define format_monitoring_time format_time_stamp
+#define decode_monitoring_time decode_time_stamp_ie
+#define encode_monitoring_time encode_time_stamp_ie
+
+static u8 * format_subsequent_volume_threshold(u8 * s, va_list * args)
 {
-  pfcp_monitoring_time_t *v = p;
-  int r;
+  pfcp_subsequent_volume_threshold_t *v = va_arg (*args, pfcp_subsequent_volume_threshold_t *);
 
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Monitoring Time: %d.", *v);
-
-  return r;
-}
-
-static int encode_monitoring_time(void *p, u8 **vec)
-{
-  pfcp_monitoring_time_t *v = p;
-
-  pfcp_debug ("PFCP: Monitoring Time: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_subsequent_volume_threshold(u8 *data, u16 length, void *p)
 {
   pfcp_subsequent_volume_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_subsequent_volume_threshold");
   return 0;
 }
 
@@ -963,15 +1006,20 @@ static int encode_subsequent_volume_threshold(void *p, u8 **vec)
 {
   pfcp_subsequent_volume_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_subsequent_volume_threshold");
   return 0;
+}
+
+static u8 * format_subsequent_time_threshold(u8 * s, va_list * args)
+{
+  pfcp_subsequent_time_threshold_t *v = va_arg (*args, pfcp_subsequent_time_threshold_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_subsequent_time_threshold(u8 *data, u16 length, void *p)
 {
   pfcp_subsequent_time_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_subsequent_time_threshold");
   return 0;
 }
 
@@ -979,15 +1027,20 @@ static int encode_subsequent_time_threshold(void *p, u8 **vec)
 {
   pfcp_subsequent_time_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_subsequent_time_threshold");
   return 0;
+}
+
+static u8 * format_inactivity_detection_time(u8 * s, va_list * args)
+{
+  pfcp_inactivity_detection_time_t *v = va_arg (*args, pfcp_inactivity_detection_time_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_inactivity_detection_time(u8 *data, u16 length, void *p)
 {
   pfcp_inactivity_detection_time_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_inactivity_detection_time");
   return 0;
 }
 
@@ -995,15 +1048,20 @@ static int encode_inactivity_detection_time(void *p, u8 **vec)
 {
   pfcp_inactivity_detection_time_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_inactivity_detection_time");
   return 0;
+}
+
+static u8 * format_reporting_triggers(u8 * s, va_list * args)
+{
+  pfcp_reporting_triggers_t *v = va_arg (*args, pfcp_reporting_triggers_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_reporting_triggers(u8 *data, u16 length, void *p)
 {
   pfcp_reporting_triggers_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_reporting_triggers");
   return 0;
 }
 
@@ -1011,7 +1069,6 @@ static int encode_reporting_triggers(void *p, u8 **vec)
 {
   pfcp_reporting_triggers_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_reporting_triggers");
   return 0;
 }
 
@@ -1084,7 +1141,6 @@ static int decode_redirect_information(u8 *data, u16 length, void *p)
       return PFCP_CAUSE_REQUEST_REJECTED;
     }
 
-  pfcp_debug ("PFCP: Redirect Information: %U.", format_redirect_information, v);
   return 0;
 }
 
@@ -1092,8 +1148,6 @@ static int encode_redirect_information(void *p, u8 **vec)
 {
   pfcp_redirect_information_t *v = p;
   u8 * s;
-
-  pfcp_debug ("PFCP: Redirect Information: %U.", format_redirect_information, v);
 
   put_u8(*vec, v->type);
 
@@ -1143,6 +1197,16 @@ void free_redirect_information(void *p)
   vec_free(v->uri);
 }
 
+static u8 * format_report_type(u8 * s, va_list * args)
+{
+  pfcp_report_type_t *v = va_arg (*args, pfcp_report_type_t *);
+
+  return format (s, "ERIR:%d,USAR:%d,DLDR:%d",
+		 !!(*v & REPORT_TYPE_ERIR),
+		 !!(*v & REPORT_TYPE_USAR),
+		 !!(*v & REPORT_TYPE_DLDR));
+}
+
 static int decode_report_type(u8 *data, u16 length, void *p)
 {
   pfcp_report_type_t *v = p;
@@ -1152,10 +1216,6 @@ static int decode_report_type(u8 *data, u16 length, void *p)
 
   *v = get_u8(data) & 0x07;
 
-  pfcp_debug ("PFCP: Report Type: ERIR:%d,USAR:%d,DLDR:%d",
-	      !!(*v & REPORT_TYPE_ERIR),
-	      !!(*v & REPORT_TYPE_USAR),
-	      !!(*v & REPORT_TYPE_DLDR));
   return 0;
 }
 
@@ -1163,20 +1223,21 @@ static int encode_report_type(void *p, u8 **vec)
 {
   pfcp_report_type_t *v = p;
 
-  pfcp_debug ("PFCP: Report Type: ERIR:%d,USAR:%d,DLDR:%d",
-	      !!(*v & REPORT_TYPE_ERIR),
-	      !!(*v & REPORT_TYPE_USAR),
-	      !!(*v & REPORT_TYPE_DLDR));
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_offending_ie(u8 * s, va_list * args)
+{
+  pfcp_offending_ie_t *v = va_arg (*args, pfcp_offending_ie_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_offending_ie(u8 *data, u16 length, void *p)
 {
   pfcp_offending_ie_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_offending_ie");
   return 0;
 }
 
@@ -1184,15 +1245,20 @@ static int encode_offending_ie(void *p, u8 **vec)
 {
   pfcp_offending_ie_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_offending_ie");
   return 0;
+}
+
+static u8 * format_forwarding_policy(u8 * s, va_list * args)
+{
+  pfcp_forwarding_policy_t *v = va_arg (*args, pfcp_forwarding_policy_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_forwarding_policy(u8 *data, u16 length, void *p)
 {
   pfcp_forwarding_policy_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_forwarding_policy");
   return 0;
 }
 
@@ -1200,8 +1266,22 @@ static int encode_forwarding_policy(void *p, u8 **vec)
 {
   pfcp_forwarding_policy_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_forwarding_policy");
   return 0;
+}
+
+static char *destination_interface_name[] = {
+  [0] = "Access",
+  [1] = "Core",
+  [2] = "SGi-LAN",
+  [3] = "CP-Function",
+  [4] = "LI Function",
+};
+
+static u8 * format_destination_interface(u8 * s, va_list * args)
+{
+  pfcp_destination_interface_t *v = va_arg (*args, pfcp_destination_interface_t *);
+
+  return format(s, "%s", destination_interface_name[*v]);
 }
 
 static int decode_destination_interface(u8 *data, u16 length, void *p)
@@ -1215,7 +1295,6 @@ static int decode_destination_interface(u8 *data, u16 length, void *p)
   if (*v >= 5)
     return PFCP_CAUSE_REQUEST_REJECTED;
 
-  pfcp_debug ("PFCP: Destination Interface: %d.", *v);
   return 0;
 }
 
@@ -1223,10 +1302,21 @@ static int encode_destination_interface(void *p, u8 **vec)
 {
   pfcp_destination_interface_t *v = p;
 
-  pfcp_debug ("PFCP: Destination Interface: %d.", *v);
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_up_function_features(u8 * s, va_list * args)
+{
+  pfcp_up_function_features_t *v = va_arg (*args, pfcp_up_function_features_t *);
+
+  return format (s, "BUCP:%d,DDND:%d,DLBD:%d,TRST:%d,"
+		 "FTUP:%d,PFDM:%d,HEEU:%d,TREU:%d,EMPU:%d",
+		 !!(*v & F_UPFF_BUCP), !!(*v & F_UPFF_DDND),
+		 !!(*v & F_UPFF_DLBD), !!(*v & F_UPFF_TRST),
+		 !!(*v & F_UPFF_FTUP), !!(*v & F_UPFF_PFDM),
+		 !!(*v & F_UPFF_HEEU), !!(*v & F_UPFF_TREU),
+		 !!(*v & F_UPFF_EMPU));
 }
 
 static int decode_up_function_features(u8 *data, u16 length, void *p)
@@ -1238,13 +1328,6 @@ static int decode_up_function_features(u8 *data, u16 length, void *p)
 
   *v = get_u16(data);
 
-  pfcp_warning ("PFCP: UP Function Features: BUCP:%d,DDND:%d,DLBD:%d,"
-		"TRST:%d,FTUP:%d,PFDM:%d,HEEU:%d,TREU:%d,EMPU:%d",
-		!!(*v & F_UPFF_BUCP), !!(*v & F_UPFF_DDND),
-		!!(*v & F_UPFF_DLBD), !!(*v & F_UPFF_TRST),
-		!!(*v & F_UPFF_FTUP), !!(*v & F_UPFF_PFDM),
-		!!(*v & F_UPFF_HEEU), !!(*v & F_UPFF_TREU),
-		!!(*v & F_UPFF_EMPU));
   return 0;
 }
 
@@ -1252,16 +1335,20 @@ static int encode_up_function_features(void *p, u8 **vec)
 {
   pfcp_up_function_features_t *v = p;
 
-  pfcp_warning ("PFCP: UP Function Features: BUCP:%d,DDND:%d,DLBD:%d,"
-		"TRST:%d,FTUP:%d,PFDM:%d,HEEU:%d,TREU:%d,EMPU:%d",
-		!!(*v & F_UPFF_BUCP), !!(*v & F_UPFF_DDND),
-		!!(*v & F_UPFF_DLBD), !!(*v & F_UPFF_TRST),
-		!!(*v & F_UPFF_FTUP), !!(*v & F_UPFF_PFDM),
-		!!(*v & F_UPFF_HEEU), !!(*v & F_UPFF_TREU),
-		!!(*v & F_UPFF_EMPU));
-
   put_u16(*vec, *v);
   return 0;
+}
+
+static u8 * format_apply_action(u8 * s, va_list * args)
+{
+  pfcp_apply_action_t *v = va_arg (*args, pfcp_apply_action_t *);
+
+  return format(s, "DUPL:%d,NOCP:%d,BUFF:%d,FORW:%d,DROP:%d",
+		!!(*v & 0x10),
+		!!(*v & 0x08),
+		!!(*v & 0x04),
+		!!(*v & 0x02),
+		!!(*v & 0x01));
 }
 
 static int decode_apply_action(u8 *data, u16 length, void *p)
@@ -1273,8 +1360,6 @@ static int decode_apply_action(u8 *data, u16 length, void *p)
 
   *v = get_u8(data) & 0x1f;
 
-  pfcp_debug ("PFCP: Apply Action: DUPL:%d,NOCP:%d,BUFF:%d,FORW:%d,DROP:%d",
-		!!(*v & 0x10), !!(*v & 0x08), !!(*v & 0x04), !!(*v & 0x02), !!(*v & 0x01));
   return 0;
 }
 
@@ -1282,18 +1367,22 @@ static int encode_apply_action(void *p, u8 **vec)
 {
   pfcp_apply_action_t *v = p;
 
-  pfcp_debug ("PFCP: Apply Action: DUPL:%d,NOCP:%d,BUFF:%d,FORW:%d,DROP:%d",
-		!!(*v & 0x10), !!(*v & 0x08), !!(*v & 0x04), !!(*v & 0x02), !!(*v & 0x01));
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_downlink_data_service_information(u8 * s, va_list * args)
+{
+  pfcp_downlink_data_service_information_t *v =
+    va_arg (*args, pfcp_downlink_data_service_information_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_downlink_data_service_information(u8 *data, u16 length, void *p)
 {
   pfcp_downlink_data_service_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_downlink_data_service_information");
   return 0;
 }
 
@@ -1301,15 +1390,21 @@ static int encode_downlink_data_service_information(void *p, u8 **vec)
 {
   pfcp_downlink_data_service_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_downlink_data_service_information");
   return 0;
+}
+
+static u8 * format_downlink_data_notification_delay(u8 * s, va_list * args)
+{
+  pfcp_downlink_data_notification_delay_t *v =
+    va_arg (*args, pfcp_downlink_data_notification_delay_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_downlink_data_notification_delay(u8 *data, u16 length, void *p)
 {
   pfcp_downlink_data_notification_delay_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_downlink_data_notification_delay");
   return 0;
 }
 
@@ -1317,15 +1412,20 @@ static int encode_downlink_data_notification_delay(void *p, u8 **vec)
 {
   pfcp_downlink_data_notification_delay_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_downlink_data_notification_delay");
   return 0;
+}
+
+static u8 * format_dl_buffering_duration(u8 * s, va_list * args)
+{
+  pfcp_dl_buffering_duration_t *v = va_arg (*args, pfcp_dl_buffering_duration_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_dl_buffering_duration(u8 *data, u16 length, void *p)
 {
   pfcp_dl_buffering_duration_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_dl_buffering_duration");
   return 0;
 }
 
@@ -1333,15 +1433,21 @@ static int encode_dl_buffering_duration(void *p, u8 **vec)
 {
   pfcp_dl_buffering_duration_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_dl_buffering_duration");
   return 0;
+}
+
+static u8 * format_dl_buffering_suggested_packet_count(u8 * s, va_list * args)
+{
+  pfcp_dl_buffering_suggested_packet_count_t *v =
+    va_arg (*args, pfcp_dl_buffering_suggested_packet_count_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_dl_buffering_suggested_packet_count(u8 *data, u16 length, void *p)
 {
   pfcp_dl_buffering_suggested_packet_count_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_dl_buffering_suggested_packet_count");
   return 0;
 }
 
@@ -1349,8 +1455,16 @@ static int encode_dl_buffering_suggested_packet_count(void *p, u8 **vec)
 {
   pfcp_dl_buffering_suggested_packet_count_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_dl_buffering_suggested_packet_count");
   return 0;
+}
+
+static u8 * format_sxsmreq_flags(u8 * s, va_list * args)
+{
+  pfcp_sxsmreq_flags_t *v = va_arg (*args, pfcp_sxsmreq_flags_t *);
+
+  return format (s, "DROBU:%d,SNDEM:%d,QUARR:%d",
+		 !!(*v & SXSMREQ_DROBU), !!(*v & SXSMREQ_SNDEM),
+		 !!(*v & SXSMREQ_QAURR));
 }
 
 static int decode_sxsmreq_flags(u8 *data, u16 length, void *p)
@@ -1362,9 +1476,6 @@ static int decode_sxsmreq_flags(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_warning ("PFCP: SxSMReq Flags: DROBU:%d,SNDEM:%d,QUARR:%d",
-		!!(*v & SXSMREQ_DROBU), !!(*v & SXSMREQ_SNDEM),
-		!!(*v & SXSMREQ_QAURR));
   return 0;
 }
 
@@ -1372,12 +1483,15 @@ static int encode_sxsmreq_flags(void *p, u8 **vec)
 {
   pfcp_sxsmreq_flags_t *v = p;
 
-  pfcp_warning ("PFCP: SxSMReq Flags: DROBU:%d,SNDEM:%d,QUARR:%d",
-		!!(*v & SXSMREQ_DROBU), !!(*v & SXSMREQ_SNDEM),
-		!!(*v & SXSMREQ_QAURR));
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_sxsrrsp_flags(u8 * s, va_list * args)
+{
+  pfcp_sxsrrsp_flags_t *v = va_arg (*args, pfcp_sxsrrsp_flags_t *);
+
+  return format (s, "DROBU:%d", !!(*v & SXSRRSP_DROBU));
 }
 
 static int decode_sxsrrsp_flags(u8 *data, u16 length, void *p)
@@ -1389,7 +1503,6 @@ static int decode_sxsrrsp_flags(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_warning ("PFCP: SxSRRsp Flags: DROBU:%d", !!(*v & SXSRRSP_DROBU));
   return 0;
 }
 
@@ -1397,17 +1510,21 @@ static int encode_sxsrrsp_flags(void *p, u8 **vec)
 {
   pfcp_sxsrrsp_flags_t *v = p;
 
-  pfcp_warning ("PFCP: SxSRRsp Flags: DROBU:%d", !!(*v & SXSRRSP_DROBU));
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_sequence_number(u8 * s, va_list * args)
+{
+  pfcp_sequence_number_t *v = va_arg (*args, pfcp_sequence_number_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_sequence_number(u8 *data, u16 length, void *p)
 {
   pfcp_sequence_number_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_sequence_number");
   return 0;
 }
 
@@ -1415,15 +1532,20 @@ static int encode_sequence_number(void *p, u8 **vec)
 {
   pfcp_sequence_number_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_sequence_number");
   return 0;
+}
+
+static u8 * format_metric(u8 * s, va_list * args)
+{
+  pfcp_metric_t *v = va_arg (*args, pfcp_metric_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_metric(u8 *data, u16 length, void *p)
 {
   pfcp_metric_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_metric");
   return 0;
 }
 
@@ -1431,15 +1553,20 @@ static int encode_metric(void *p, u8 **vec)
 {
   pfcp_metric_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_metric");
   return 0;
+}
+
+static u8 * format_timer(u8 * s, va_list * args)
+{
+  pfcp_timer_t *v = va_arg (*args, pfcp_timer_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_timer(u8 *data, u16 length, void *p)
 {
   pfcp_timer_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_timer");
   return 0;
 }
 
@@ -1447,8 +1574,15 @@ static int encode_timer(void *p, u8 **vec)
 {
   pfcp_timer_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_timer");
   return 0;
+}
+
+static u8 * format_pdr_id(u8 * s, va_list * args)
+{
+  pfcp_pdr_id_t *v = va_arg (*args, pfcp_pdr_id_t *);
+
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_pdr_id(u8 *data, u16 length, void *p)
@@ -1460,7 +1594,6 @@ static int decode_pdr_id(u8 *data, u16 length, void *p)
 
   *v = get_u16(data);
 
-  pfcp_debug ("PFCP: PDR Id: %d.", *v);
   return 0;
 }
 
@@ -1468,14 +1601,11 @@ static int encode_pdr_id(void *p, u8 **vec)
 {
   pfcp_pdr_id_t *v = p;
 
-  pfcp_debug ("PFCP: PDR Id: %d.", *v);
-
   put_u16(*vec, *v);
   return 0;
 }
 
-static u8 *
-format_f_seid(u8 * s, va_list * args)
+static u8 * format_f_seid(u8 * s, va_list * args)
 {
   pfcp_f_seid_t *n = va_arg (*args, pfcp_f_seid_t *);
 
@@ -1509,7 +1639,7 @@ static int decode_f_seid(u8 *data, u16 length, void *p)
   v->flags = get_u8(data) & 0x03;
   if (v->flags == 0)
     {
-      pfcp_warning ("PFCP: F-SEID with unsupported flags: %02x.", v->flags);
+      pfcp_debug ("PFCP: F-SEID with unsupported flags: %02x.", v->flags);
       return -1;
     }
 
@@ -1532,15 +1662,12 @@ static int decode_f_seid(u8 *data, u16 length, void *p)
       get_ip6(v->ip6, data);
     }
 
-  pfcp_debug ("PFCP: F-SEID: %U.", format_f_seid, v);
   return 0;
 }
 
 static int encode_f_seid(void *p, u8 **vec)
 {
   pfcp_f_seid_t *v __attribute__ ((unused)) = p;
-
-  pfcp_debug ("PFCP: F-SEID: %U.", format_f_seid, v);
 
   put_u8(*vec, v->flags);
   put_u64(*vec, v->seid);
@@ -1567,7 +1694,7 @@ format_node_id(u8 * s, va_list * args)
       break;
 
     case NID_FQDN:
-      s = format(s, "%U", format_network_instance, &n->fqdn);
+      s = format(s, "%U", format_network_instance, n->fqdn);
       break;
     }
   return s;
@@ -1606,15 +1733,12 @@ static int decode_node_id(u8 *data, u16 length, void *p)
       return PFCP_CAUSE_REQUEST_REJECTED;
     }
 
-  pfcp_debug ("PFCP: Node Id: %U.", format_node_id, v);
   return 0;
 }
 
 static int encode_node_id(void *p, u8 **vec)
 {
   pfcp_node_id_t *v = p;
-
-  pfcp_debug ("PFCP: Node Id: %U.", format_node_id, v);
 
   put_u8(*vec, v->type);
 
@@ -1643,11 +1767,17 @@ static void free_node_id(void *p)
   vec_free(v->fqdn);
 }
 
+static u8 * format_pfd_contents(u8 * s, va_list * args)
+{
+  pfcp_pfd_contents_t *v = va_arg (*args, pfcp_pfd_contents_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
+}
+
 static int decode_pfd_contents(u8 *data, u16 length, void *p)
 {
   pfcp_pfd_contents_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_pfd_contents");
   return 0;
 }
 
@@ -1655,8 +1785,18 @@ static int encode_pfd_contents(void *p, u8 **vec)
 {
   pfcp_pfd_contents_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_pfd_contents");
   return 0;
+}
+
+static u8 * format_measurement_method(u8 * s, va_list * args)
+{
+  pfcp_measurement_method_t *v = va_arg (*args, pfcp_measurement_method_t *);
+
+  s = format (s, "DURAT:%d,VOLUM:%d,EVENT:%d",
+	      !!(*v & MEASUREMENT_METHOD_DURATION),
+	      !!(*v & MEASUREMENT_METHOD_VOLUME),
+	      !!(*v & MEASUREMENT_METHOD_EVENT));
+  return s;
 }
 
 static int decode_measurement_method(u8 *data, u16 length, void *p)
@@ -1668,7 +1808,6 @@ static int decode_measurement_method(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_debug ("PFCP: Measurement Method: %d.", *v);
   return 0;
 }
 
@@ -1676,10 +1815,33 @@ static int encode_measurement_method(void *p, u8 **vec)
 {
   pfcp_measurement_method_t *v = p;
 
-  pfcp_debug ("PFCP: Measurement Method: %d.", *v);
-
   put_u8(*vec, *v & 0x07);
   return 0;
+}
+
+static u8 * format_usage_report_trigger(u8 * s, va_list * args)
+{
+  pfcp_usage_report_trigger_t *v = va_arg (*args, pfcp_usage_report_trigger_t *);
+
+  s = format (s, "PERIO:%d,VOLTH:%d,TIMTH:%d,QUHTI:%d,"
+	      "START:%d,STOPT:%d,DROTH:%d,IMMER:%d,"
+	      "VOLQU:%d,TIMQU:%d,LIUSA:%d,TERMR:%d,"
+	      "MONIT:%d,ENVCL:%d",
+	      !!(*v & USAGE_REPORT_TRIGGER_PERIODIC_REPORTING),
+	      !!(*v & USAGE_REPORT_TRIGGER_VOLUME_THRESHOLD),
+	      !!(*v & USAGE_REPORT_TRIGGER_TIME_THRESHOLD),
+	      !!(*v & USAGE_REPORT_TRIGGER_QUOTA_HOLDING_TIME),
+	      !!(*v & USAGE_REPORT_TRIGGER_START_OF_TRAFFIC),
+	      !!(*v & USAGE_REPORT_TRIGGER_STOP_OF_TRAFFIC),
+	      !!(*v & USAGE_REPORT_TRIGGER_DROPPED_DL_TRAFFIC_THRESHOLD),
+	      !!(*v & USAGE_REPORT_TRIGGER_IMMEDIATE_REPORT),
+	      !!(*v & USAGE_REPORT_TRIGGER_VOLUME_QUOTA),
+	      !!(*v & USAGE_REPORT_TRIGGER_TIME_QUOTA),
+	      !!(*v & USAGE_REPORT_TRIGGER_LINKED_USAGE_REPORTING),
+	      !!(*v & USAGE_REPORT_TRIGGER_TERMINATION_REPORT),
+	      !!(*v & USAGE_REPORT_TRIGGER_MONITORING_TIME),
+	      !!(*v & USAGE_REPORT_TRIGGER_ENVELOPE_CLOSURE));
+  return s;
 }
 
 static int decode_usage_report_trigger(u8 *data, u16 length, void *p)
@@ -1691,26 +1853,6 @@ static int decode_usage_report_trigger(u8 *data, u16 length, void *p)
 
   *v = (data[1] << 8) & data[0];
 
-  pfcp_debug ("PFCP: Usage Report Trigger: "
-		"PERIO:%d,VOLTH:%d,TIMTH:%d,QUHTI:%d,"
-		"START:%d,STOPT:%d,DROTH:%d,IMMER:%d",
-		!!(*v & USAGE_REPORT_TRIGGER_PERIODIC_REPORTING),
-		!!(*v & USAGE_REPORT_TRIGGER_VOLUME_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_TIME_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_QUOTA_HOLDING_TIME),
-		!!(*v & USAGE_REPORT_TRIGGER_START_OF_TRAFFIC),
-		!!(*v & USAGE_REPORT_TRIGGER_STOP_OF_TRAFFIC),
-		!!(*v & USAGE_REPORT_TRIGGER_DROPPED_DL_TRAFFIC_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_IMMEDIATE_REPORT));
-  pfcp_debug ("PFCP: Usage Report Trigger: "
-		"VOLQU:%d,TIMQU:%d,LIUSA:%d,TERMR:%d,"
-		"MONIT:%d,ENVCL:%d",
-		!!(*v & USAGE_REPORT_TRIGGER_VOLUME_QUOTA),
-		!!(*v & USAGE_REPORT_TRIGGER_TIME_QUOTA),
-		!!(*v & USAGE_REPORT_TRIGGER_LINKED_USAGE_REPORTING),
-		!!(*v & USAGE_REPORT_TRIGGER_TERMINATION_REPORT),
-		!!(*v & USAGE_REPORT_TRIGGER_MONITORING_TIME),
-		!!(*v & USAGE_REPORT_TRIGGER_ENVELOPE_CLOSURE));
   return 0;
 }
 
@@ -1718,37 +1860,22 @@ static int encode_usage_report_trigger(void *p, u8 **vec)
 {
   pfcp_usage_report_trigger_t *v = p;
 
-  pfcp_debug ("PFCP: Usage_Report_Trigger: "
-		"PERIO:%d,VOLTH:%d,TIMTH:%d,QUHTI:%d,"
-		"START:%d,STOPT:%d,DROTH:%d,IMMER:%d",
-		!!(*v & USAGE_REPORT_TRIGGER_PERIODIC_REPORTING),
-		!!(*v & USAGE_REPORT_TRIGGER_VOLUME_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_TIME_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_QUOTA_HOLDING_TIME),
-		!!(*v & USAGE_REPORT_TRIGGER_START_OF_TRAFFIC),
-		!!(*v & USAGE_REPORT_TRIGGER_STOP_OF_TRAFFIC),
-		!!(*v & USAGE_REPORT_TRIGGER_DROPPED_DL_TRAFFIC_THRESHOLD),
-		!!(*v & USAGE_REPORT_TRIGGER_IMMEDIATE_REPORT));
-  pfcp_debug ("PFCP: Usage_Report_Trigger: "
-		"VOLQU:%d,TIMQU:%d,LIUSA:%d,TERMR:%d,"
-		"MONIT:%d,ENVCL:%d",
-		!!(*v & USAGE_REPORT_TRIGGER_VOLUME_QUOTA),
-		!!(*v & USAGE_REPORT_TRIGGER_TIME_QUOTA),
-		!!(*v & USAGE_REPORT_TRIGGER_LINKED_USAGE_REPORTING),
-		!!(*v & USAGE_REPORT_TRIGGER_TERMINATION_REPORT),
-		!!(*v & USAGE_REPORT_TRIGGER_MONITORING_TIME),
-		!!(*v & USAGE_REPORT_TRIGGER_ENVELOPE_CLOSURE));
-
   put_u8(*vec, *v & 0xff);
   put_u8(*vec, (*v >> 8) & 0xff);
   return 0;
+}
+
+static u8 * format_measurement_period(u8 * s, va_list * args)
+{
+  pfcp_measurement_period_t *v = va_arg (*args, pfcp_measurement_period_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_measurement_period(u8 *data, u16 length, void *p)
 {
   pfcp_measurement_period_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_measurement_period");
   return 0;
 }
 
@@ -1756,15 +1883,20 @@ static int encode_measurement_period(void *p, u8 **vec)
 {
   pfcp_measurement_period_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_measurement_period");
   return 0;
+}
+
+static u8 * format_fq_csid(u8 * s, va_list * args)
+{
+  pfcp_fq_csid_t *v = va_arg (*args, pfcp_fq_csid_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_fq_csid(u8 *data, u16 length, void *p)
 {
   pfcp_fq_csid_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_fq_csid");
   return 0;
 }
 
@@ -1772,34 +1904,24 @@ static int encode_fq_csid(void *p, u8 **vec)
 {
   pfcp_fq_csid_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_fq_csid");
   return 0;
 }
 
-static int decode_volume_measurement(u8 *data, u16 length, void *p)
+#define format_volume_measurement format_volume_ie
+#define decode_volume_measurement decode_volume_ie
+#define encode_volume_measurement encode_volume_ie
+
+static u8 * format_duration_measurement(u8 * s, va_list * args)
 {
-  pfcp_volume_measurement_t *v = p;
-  int r;
+  pfcp_duration_measurement_t *v = va_arg (*args, pfcp_duration_measurement_t *);
 
-  if ((r = decode_volume_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Volume Measurement: T:%d,U:%d,D:%d", v->total, v->ul, v->dl);
-
-  return r;
-}
-
-static int encode_volume_measurement(void *p, u8 **vec)
-{
-  pfcp_volume_measurement_t *v = p;
-
-  pfcp_debug ("PFCP: Volume Measurement: T:%d,U:%d,D:%d", v->total, v->ul, v->dl);
-  return encode_volume_ie(v, vec);
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_duration_measurement(u8 *data, u16 length, void *p)
 {
   pfcp_duration_measurement_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_duration_measurement");
   return 0;
 }
 
@@ -1807,55 +1929,28 @@ static int encode_duration_measurement(void *p, u8 **vec)
 {
   pfcp_duration_measurement_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_duration_measurement");
   return 0;
 }
 
-static int decode_time_of_first_packet(u8 *data, u16 length, void *p)
+#define format_time_of_first_packet format_time_stamp
+#define decode_time_of_first_packet decode_time_stamp_ie
+#define encode_time_of_first_packet encode_time_stamp_ie
+
+#define format_time_of_last_packet format_time_stamp
+#define decode_time_of_last_packet decode_time_stamp_ie
+#define encode_time_of_last_packet encode_time_stamp_ie
+
+static u8 * format_quota_holding_time(u8 * s, va_list * args)
 {
-  pfcp_time_of_first_packet_t *v = p;
-  int r;
+  pfcp_quota_holding_time_t *v = va_arg (*args, pfcp_quota_holding_time_t *);
 
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Time of First Packet: %d.", *v);
-
-  return r;
-}
-
-static int encode_time_of_first_packet(void *p, u8 **vec)
-{
-  pfcp_time_of_first_packet_t *v = p;
-
-  pfcp_debug ("PFCP: Time of First Packet: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
-}
-
-static int decode_time_of_last_packet(u8 *data, u16 length, void *p)
-{
-  pfcp_time_of_last_packet_t *v = p;
-  int r;
-
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Time of Last Packet: %d.", *v);
-
-  return r;
-}
-
-static int encode_time_of_last_packet(void *p, u8 **vec)
-{
-  pfcp_time_of_last_packet_t *v = p;
-
-  pfcp_debug ("PFCP: Time of Last Packet: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_quota_holding_time(u8 *data, u16 length, void *p)
 {
   pfcp_quota_holding_time_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_quota_holding_time");
   return 0;
 }
 
@@ -1863,15 +1958,21 @@ static int encode_quota_holding_time(void *p, u8 **vec)
 {
   pfcp_quota_holding_time_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_quota_holding_time");
   return 0;
+}
+
+static u8 * format_dropped_dl_traffic_threshold(u8 * s, va_list * args)
+{
+  pfcp_dropped_dl_traffic_threshold_t *v =
+    va_arg (*args, pfcp_dropped_dl_traffic_threshold_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_dropped_dl_traffic_threshold(u8 *data, u16 length, void *p)
 {
   pfcp_dropped_dl_traffic_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_dropped_dl_traffic_threshold");
   return 0;
 }
 
@@ -1879,15 +1980,20 @@ static int encode_dropped_dl_traffic_threshold(void *p, u8 **vec)
 {
   pfcp_dropped_dl_traffic_threshold_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_dropped_dl_traffic_threshold");
   return 0;
+}
+
+static u8 * format_volume_quota(u8 * s, va_list * args)
+{
+  pfcp_volume_quota_t *v = va_arg (*args, pfcp_volume_quota_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_volume_quota(u8 *data, u16 length, void *p)
 {
   pfcp_volume_quota_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_volume_quota");
   return 0;
 }
 
@@ -1895,15 +2001,20 @@ static int encode_volume_quota(void *p, u8 **vec)
 {
   pfcp_volume_quota_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_volume_quota");
   return 0;
+}
+
+static u8 * format_time_quota(u8 * s, va_list * args)
+{
+  pfcp_time_quota_t *v = va_arg (*args, pfcp_time_quota_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_time_quota(u8 *data, u16 length, void *p)
 {
   pfcp_time_quota_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_time_quota");
   return 0;
 }
 
@@ -1911,48 +2022,23 @@ static int encode_time_quota(void *p, u8 **vec)
 {
   pfcp_time_quota_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_time_quota");
   return 0;
 }
 
-static int decode_start_time(u8 *data, u16 length, void *p)
+#define format_start_time format_time_stamp
+#define decode_start_time decode_time_stamp_ie
+#define encode_start_time encode_time_stamp_ie
+
+#define format_end_time format_time_stamp
+#define decode_end_time decode_time_stamp_ie
+#define encode_end_time encode_time_stamp_ie
+
+static u8 * format_urr_id(u8 * s, va_list * args)
 {
-  pfcp_start_time_t *v = p;
-  int r;
+  pfcp_urr_id_t *v = va_arg (*args, pfcp_urr_id_t *);
 
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Start Time: %d.", *v);
-
-  return r;
-}
-
-static int encode_start_time(void *p, u8 **vec)
-{
-  pfcp_start_time_t *v = p;
-
-  pfcp_debug ("PFCP: Start Time: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
-}
-
-static int decode_end_time(u8 *data, u16 length, void *p)
-{
-  pfcp_end_time_t *v = p;
-  int r;
-
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: End Time: %d.", *v);
-
-  return r;
-}
-
-static int encode_end_time(void *p, u8 **vec)
-{
-  pfcp_end_time_t *v = p;
-
-  pfcp_debug ("PFCP: End Time: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_urr_id(u8 *data, u16 length, void *p)
@@ -1964,7 +2050,6 @@ static int decode_urr_id(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: URR Id: %d (%p).", *v, v);
   return 0;
 }
 
@@ -1972,10 +2057,16 @@ static int encode_urr_id(void *p, u8 **vec)
 {
   pfcp_urr_id_t *v = p;
 
-  pfcp_debug ("PFCP: URR Id: %d.", *v);
-
   put_u32(*vec, *v);
   return 0;
+}
+
+static u8 * format_linked_urr_id(u8 * s, va_list * args)
+{
+  pfcp_linked_urr_id_t *v = va_arg (*args, pfcp_linked_urr_id_t *);
+
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_linked_urr_id(u8 *data, u16 length, void *p)
@@ -1987,15 +2078,12 @@ static int decode_linked_urr_id(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: LINKED_URR Id: %d.", *v);
   return 0;
 }
 
 static int encode_linked_urr_id(void *p, u8 **vec)
 {
   pfcp_linked_urr_id_t *v = p;
-
-  pfcp_debug ("PFCP: Linked URR Id: %d.", *v);
 
   put_u32(*vec, *v);
   return 0;
@@ -2012,23 +2100,22 @@ static const char *outer_header_creation_description_flags[] = {
 u8 *
 format_outer_header_creation(u8 * s, va_list * args)
 {
-  pfcp_outer_header_creation_t *i =
-    va_arg (*args, pfcp_outer_header_creation_t *);
+  pfcp_outer_header_creation_t *v = va_arg (*args, pfcp_outer_header_creation_t *);
 
-  s = format(s, "%U", format_flags, (u64)i->description,
+  s = format(s, "%U", format_flags, (u64)v->description,
 	     outer_header_creation_description_flags);
 
-  if (i->description & OUTER_HEADER_CREATION_GTP)
-    s = format(s, ",TEID:%08x", i->teid);
+  if (v->description & OUTER_HEADER_CREATION_GTP)
+    s = format(s, ",TEID:%08x", v->teid);
 
-  if (i->description & OUTER_HEADER_CREATION_IP4)
-    s = format(s, ",IP:%U", format_ip4_address, &i->ip4);
+  if (v->description & OUTER_HEADER_CREATION_IP4)
+    s = format(s, ",IP:%U", format_ip4_address, &v->ip4);
 
-  if (i->description & OUTER_HEADER_CREATION_IP6)
-    s = format(s, ",IP:%U", format_ip6_address, &i->ip6);
+  if (v->description & OUTER_HEADER_CREATION_IP6)
+    s = format(s, ",IP:%U", format_ip6_address, &v->ip6);
 
-  if (i->description & OUTER_HEADER_CREATION_UDP)
-    s = format(s, ",Port:%d", i->port);
+  if (v->description & OUTER_HEADER_CREATION_UDP)
+    s = format(s, ",Port:%d", v->port);
 
   return s;
 }
@@ -2084,16 +2171,12 @@ static int decode_outer_header_creation(u8 *data, u16 length, void *p)
       v->port = get_u16(data);
     }
 
-  pfcp_debug ("PFCP: Outer Header Creation: %U", format_outer_header_creation, v);
-
   return 0;
 }
 
 static int encode_outer_header_creation(void *p, u8 **vec)
 {
   pfcp_outer_header_creation_t *v = p;
-
-  pfcp_debug ("PFCP: Outer Header Creation: %U", format_outer_header_creation, v);
 
   put_u16_little(*vec, v->description);
 
@@ -2112,6 +2195,14 @@ static int encode_outer_header_creation(void *p, u8 **vec)
   return 0;
 }
 
+static u8 * format_bar_id(u8 * s, va_list * args)
+{
+  pfcp_bar_id_t *v = va_arg (*args, pfcp_bar_id_t *);
+
+  s = format(s, "%u", *v);
+  return s;
+}
+
 static int decode_bar_id(u8 *data, u16 length, void *p)
 {
   pfcp_bar_id_t *v = p;
@@ -2121,7 +2212,6 @@ static int decode_bar_id(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_debug ("PFCP: BAR Id: %d.", *v);
   return 0;
 }
 
@@ -2129,17 +2219,21 @@ static int encode_bar_id(void *p, u8 **vec)
 {
   pfcp_bar_id_t *v = p;
 
-  pfcp_debug ("PFCP: BAR Id: %d.", *v);
-
   put_u8(*vec, *v);
   return 0;
+}
+
+static u8 * format_cp_function_features(u8 * s, va_list * args)
+{
+  pfcp_cp_function_features_t *v = va_arg (*args, pfcp_cp_function_features_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_cp_function_features(u8 *data, u16 length, void *p)
 {
   pfcp_cp_function_features_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_cp_function_features");
   return 0;
 }
 
@@ -2147,15 +2241,20 @@ static int encode_cp_function_features(void *p, u8 **vec)
 {
   pfcp_cp_function_features_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_cp_function_features");
   return 0;
+}
+
+static u8 * format_usage_information(u8 * s, va_list * args)
+{
+  pfcp_usage_information_t *v = va_arg (*args, pfcp_usage_information_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_usage_information(u8 *data, u16 length, void *p)
 {
   pfcp_usage_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_usage_information");
   return 0;
 }
 
@@ -2163,15 +2262,20 @@ static int encode_usage_information(void *p, u8 **vec)
 {
   pfcp_usage_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_usage_information");
   return 0;
+}
+
+static u8 * format_application_instance_id(u8 * s, va_list * args)
+{
+  pfcp_application_instance_id_t *v = va_arg (*args, pfcp_application_instance_id_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_application_instance_id(u8 *data, u16 length, void *p)
 {
   pfcp_application_instance_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_application_instance_id");
   return 0;
 }
 
@@ -2179,15 +2283,20 @@ static int encode_application_instance_id(void *p, u8 **vec)
 {
   pfcp_application_instance_id_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_application_instance_id");
   return 0;
+}
+
+static u8 * format_flow_information(u8 * s, va_list * args)
+{
+  pfcp_flow_information_t *v = va_arg (*args, pfcp_flow_information_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_flow_information(u8 *data, u16 length, void *p)
 {
   pfcp_flow_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_flow_information");
   return 0;
 }
 
@@ -2195,37 +2304,39 @@ static int encode_flow_information(void *p, u8 **vec)
 {
   pfcp_flow_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_flow_information");
   return 0;
 }
 
-static void debug_ue_ip_address(pfcp_ue_ip_address_t *v)
+static u8 * format_ue_ip_address(u8 * s, va_list * args)
 {
+  pfcp_ue_ip_address_t *v = va_arg (*args, pfcp_ue_ip_address_t *);
+
   switch (v->flags & (IE_UE_IP_ADDRESS_V4 | IE_UE_IP_ADDRESS_V6))
     {
     case IE_UE_IP_ADDRESS_V4:
-      pfcp_debug ("PFCP: UE IP Addr, S/D:%d,IPv4:%U.",
+      s = format (s, "S/D:%d,IPv4:%U.",
 		    !!(v->flags & IE_UE_IP_ADDRESS_SD),
 		    format_ip4_address, &v->ip4);
       break;
 
     case IE_UE_IP_ADDRESS_V6:
-      pfcp_debug ("PFCP: UE IP Addr, S/D:%d,IPv6:%U.",
+      s = format (s, "S/D:%d,IPv6:%U.",
 		    !!(v->flags & IE_UE_IP_ADDRESS_SD),
 		    format_ip4_address, &v->ip6);
       break;
 
     case (IE_UE_IP_ADDRESS_V4 | IE_UE_IP_ADDRESS_V6):
-      pfcp_debug ("PFCP: UE IP Addr, S/D:%d,IPv4:%U,IPv6:%U.",
+      s = format (s, "S/D:%d,IPv4:%U,IPv6:%U.",
 		    !!(v->flags & IE_UE_IP_ADDRESS_SD),
 		    format_ip4_address, &v->ip4,
 		    format_ip4_address, &v->ip6);
       break;
 
     default:
-      pfcp_debug ("PFCP: UE IP Addr, S/D:%d.", !!(v->flags & IE_UE_IP_ADDRESS_SD));
+      s = format (s, "S/D:%d.", !!(v->flags & IE_UE_IP_ADDRESS_SD));
       break;
     }
+  return s;
 }
 
 static int decode_ue_ip_address(u8 *data, u16 length, void *p)
@@ -2255,15 +2366,12 @@ static int decode_ue_ip_address(u8 *data, u16 length, void *p)
       get_ip6(v->ip6, data);
     }
 
-  debug_ue_ip_address(v);
   return 0;
 }
 
 static int encode_ue_ip_address(void *p, u8 **vec)
 {
   pfcp_ue_ip_address_t *v = p;
-
-  debug_ue_ip_address(v);
 
   put_u8(*vec, v->flags);
   if (v->flags & IE_UE_IP_ADDRESS_V4)
@@ -2274,11 +2382,17 @@ static int encode_ue_ip_address(void *p, u8 **vec)
   return 0;
 }
 
+static u8 * format_packet_rate(u8 * s, va_list * args)
+{
+  pfcp_packet_rate_t *v = va_arg (*args, pfcp_packet_rate_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
+}
+
 static int decode_packet_rate(u8 *data, u16 length, void *p)
 {
   pfcp_packet_rate_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_packet_rate");
   return 0;
 }
 
@@ -2286,8 +2400,14 @@ static int encode_packet_rate(void *p, u8 **vec)
 {
   pfcp_packet_rate_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_packet_rate");
   return 0;
+}
+
+static u8 * format_outer_header_removal(u8 * s, va_list * args)
+{
+  pfcp_outer_header_removal_t *v = va_arg (*args, pfcp_outer_header_removal_t *);
+
+  return format(s, "%s", *v ? "true" : "false");
 }
 
 static int decode_outer_header_removal(u8 *data, u16 length, void *p)
@@ -2299,7 +2419,6 @@ static int decode_outer_header_removal(u8 *data, u16 length, void *p)
 
   *v = get_u8(data);
 
-  pfcp_debug ("PFCP: Outer Header Removal: %d.", *v);
   return 0;
 }
 
@@ -2307,37 +2426,25 @@ static int encode_outer_header_removal(void *p, u8 **vec)
 {
   pfcp_outer_header_removal_t *v = p;
 
-  pfcp_debug ("PFCP: Outer Header Removal: %d.", *v);
-
   put_u8(*vec, *v);
   return 0;
 }
 
-static int decode_recovery_time_stamp(u8 *data, u16 length, void *p)
+#define format_recovery_time_stamp format_time_stamp
+#define decode_recovery_time_stamp decode_time_stamp_ie
+#define encode_recovery_time_stamp encode_time_stamp_ie
+
+static u8 * format_dl_flow_level_marking(u8 * s, va_list * args)
 {
-  pfcp_recovery_time_stamp_t *v = p;
-  int r;
+  pfcp_dl_flow_level_marking_t *v = va_arg (*args, pfcp_dl_flow_level_marking_t *);
 
-  if ((r = decode_time_stamp_ie(data, length, v)) == 0)
-    pfcp_debug ("PFCP: Recovery Time Stamp: %d.", *v);
-
-  return r;
-}
-
-static int encode_recovery_time_stamp(void *p, u8 **vec)
-{
-  pfcp_recovery_time_stamp_t *v = p;
-
-  pfcp_debug ("PFCP: Recovery Time Stamp: %d.", *v);
-
-  return encode_time_stamp_ie(v, vec);
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_dl_flow_level_marking(u8 *data, u16 length, void *p)
 {
   pfcp_dl_flow_level_marking_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_dl_flow_level_marking");
   return 0;
 }
 
@@ -2345,15 +2452,20 @@ static int encode_dl_flow_level_marking(void *p, u8 **vec)
 {
   pfcp_dl_flow_level_marking_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_dl_flow_level_marking");
   return 0;
+}
+
+static u8 * format_header_enrichment(u8 * s, va_list * args)
+{
+  pfcp_header_enrichment_t *v = va_arg (*args, pfcp_header_enrichment_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_header_enrichment(u8 *data, u16 length, void *p)
 {
   pfcp_header_enrichment_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_header_enrichment");
   return 0;
 }
 
@@ -2361,15 +2473,20 @@ static int encode_header_enrichment(void *p, u8 **vec)
 {
   pfcp_header_enrichment_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_header_enrichment");
   return 0;
+}
+
+static u8 * format_measurement_information(u8 * s, va_list * args)
+{
+  pfcp_measurement_information_t *v = va_arg (*args, pfcp_measurement_information_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_measurement_information(u8 *data, u16 length, void *p)
 {
   pfcp_measurement_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_measurement_information");
   return 0;
 }
 
@@ -2377,15 +2494,20 @@ static int encode_measurement_information(void *p, u8 **vec)
 {
   pfcp_measurement_information_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_measurement_information");
   return 0;
+}
+
+static u8 * format_node_report_type(u8 * s, va_list * args)
+{
+  pfcp_node_report_type_t *v = va_arg (*args, pfcp_node_report_type_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_node_report_type(u8 *data, u16 length, void *p)
 {
   pfcp_node_report_type_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_node_report_type");
   return 0;
 }
 
@@ -2393,15 +2515,20 @@ static int encode_node_report_type(void *p, u8 **vec)
 {
   pfcp_node_report_type_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_node_report_type");
   return 0;
+}
+
+static u8 * format_remote_gtp_u_peer(u8 * s, va_list * args)
+{
+  pfcp_remote_gtp_u_peer_t *v = va_arg (*args, pfcp_remote_gtp_u_peer_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_remote_gtp_u_peer(u8 *data, u16 length, void *p)
 {
   pfcp_remote_gtp_u_peer_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_remote_gtp_u_peer");
   return 0;
 }
 
@@ -2409,8 +2536,15 @@ static int encode_remote_gtp_u_peer(void *p, u8 **vec)
 {
   pfcp_remote_gtp_u_peer_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_remote_gtp_u_peer");
   return 0;
+}
+
+static u8 * format_ur_seqn(u8 * s, va_list * args)
+{
+  pfcp_ur_seqn_t *v = va_arg (*args, pfcp_ur_seqn_t *);
+
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_ur_seqn(u8 *data, u16 length, void *p)
@@ -2422,7 +2556,6 @@ static int decode_ur_seqn(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: UR SeqN: %d (%p).", *v, v);
   return 0;
 }
 
@@ -2430,17 +2563,21 @@ static int encode_ur_seqn(void *p, u8 **vec)
 {
   pfcp_ur_seqn_t *v = p;
 
-  pfcp_debug ("PFCP: UR SeqN: %d.", *v);
-
   put_u32(*vec, *v);
   return 0;
+}
+
+static u8 * format_activate_predefined_rules(u8 * s, va_list * args)
+{
+  pfcp_activate_predefined_rules_t *v = va_arg (*args, pfcp_activate_predefined_rules_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_activate_predefined_rules(u8 *data, u16 length, void *p)
 {
   pfcp_activate_predefined_rules_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_activate_predefined_rules");
   return 0;
 }
 
@@ -2448,15 +2585,20 @@ static int encode_activate_predefined_rules(void *p, u8 **vec)
 {
   pfcp_activate_predefined_rules_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_activate_predefined_rules");
   return 0;
+}
+
+static u8 * format_deactivate_predefined_rules(u8 * s, va_list * args)
+{
+  pfcp_deactivate_predefined_rules_t *v = va_arg (*args, pfcp_deactivate_predefined_rules_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_deactivate_predefined_rules(u8 *data, u16 length, void *p)
 {
   pfcp_deactivate_predefined_rules_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_deactivate_predefined_rules");
   return 0;
 }
 
@@ -2464,8 +2606,15 @@ static int encode_deactivate_predefined_rules(void *p, u8 **vec)
 {
   pfcp_deactivate_predefined_rules_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_deactivate_predefined_rules");
   return 0;
+}
+
+static u8 * format_far_id(u8 * s, va_list * args)
+{
+  pfcp_far_id_t *v = va_arg (*args, pfcp_far_id_t *);
+
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_far_id(u8 *data, u16 length, void *p)
@@ -2477,7 +2626,6 @@ static int decode_far_id(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: FAR Id: %d.", *v);
   return 0;
 }
 
@@ -2485,10 +2633,16 @@ static int encode_far_id(void *p, u8 **vec)
 {
   pfcp_far_id_t *v = p;
 
-  pfcp_debug ("PFCP: FAR Id: %d.", *v);
-
   put_u32(*vec, *v);
   return 0;
+}
+
+static u8 * format_qer_id(u8 * s, va_list * args)
+{
+  pfcp_qer_id_t *v = va_arg (*args, pfcp_qer_id_t *);
+
+  s = format(s, "%u", *v);
+  return s;
 }
 
 static int decode_qer_id(u8 *data, u16 length, void *p)
@@ -2500,7 +2654,6 @@ static int decode_qer_id(u8 *data, u16 length, void *p)
 
   *v = get_u32(data);
 
-  pfcp_debug ("PFCP: QER Id: %d.", *v);
   return 0;
 }
 
@@ -2508,17 +2661,21 @@ static int encode_qer_id(void *p, u8 **vec)
 {
   pfcp_qer_id_t *v = p;
 
-  pfcp_debug ("PFCP: QER Id: %d.", *v);
-
   put_u32(*vec, *v);
   return 0;
+}
+
+static u8 * format_oci_flags(u8 * s, va_list * args)
+{
+  pfcp_oci_flags_t *v = va_arg (*args, pfcp_oci_flags_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_oci_flags(u8 *data, u16 length, void *p)
 {
   pfcp_oci_flags_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_oci_flags");
   return 0;
 }
 
@@ -2526,15 +2683,21 @@ static int encode_oci_flags(void *p, u8 **vec)
 {
   pfcp_oci_flags_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_oci_flags");
   return 0;
+}
+
+static u8 * format_sx_association_release_request(u8 * s, va_list * args)
+{
+  pfcp_sx_association_release_request_t *v =
+    va_arg (*args, pfcp_sx_association_release_request_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_sx_association_release_request(u8 *data, u16 length, void *p)
 {
   pfcp_sx_association_release_request_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_sx_association_release_request");
   return 0;
 }
 
@@ -2542,15 +2705,20 @@ static int encode_sx_association_release_request(void *p, u8 **vec)
 {
   pfcp_sx_association_release_request_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_sx_association_release_request");
   return 0;
+}
+
+static u8 * format_graceful_release_period(u8 * s, va_list * args)
+{
+  pfcp_graceful_release_period_t *v = va_arg (*args, pfcp_graceful_release_period_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_graceful_release_period(u8 *data, u16 length, void *p)
 {
   pfcp_graceful_release_period_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_graceful_release_period");
   return 0;
 }
 
@@ -2558,15 +2726,20 @@ static int encode_graceful_release_period(void *p, u8 **vec)
 {
   pfcp_graceful_release_period_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_graceful_release_period");
   return 0;
+}
+
+static u8 * format_pdn_type(u8 * s, va_list * args)
+{
+  pfcp_pdn_type_t *v = va_arg (*args, pfcp_pdn_type_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
 }
 
 static int decode_pdn_type(u8 *data, u16 length, void *p)
 {
   pfcp_pdn_type_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_pdn_type");
   return 0;
 }
 
@@ -2574,8 +2747,42 @@ static int encode_pdn_type(void *p, u8 **vec)
 {
   pfcp_pdn_type_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_pdn_type");
   return 0;
+}
+
+static char *failed_rule_type[] = {
+  [FAILED_RULE_TYPE_PDR] = "PDR",
+  [FAILED_RULE_TYPE_FAR] = "FAR",
+  [FAILED_RULE_TYPE_QER] = "QER",
+  [FAILED_RULE_TYPE_URR] = "URR",
+  [FAILED_RULE_TYPE_BAR] = "BAR",
+};
+
+static u8 * format_failed_rule_id(u8 * s, va_list * args)
+{
+  pfcp_failed_rule_id_t *n = va_arg (*args, pfcp_failed_rule_id_t *);
+
+  switch (n->type)
+    {
+    case FAILED_RULE_TYPE_BAR:
+      s = format(s, "%s: %u", failed_rule_type[n->type], n->id);
+      break;
+
+    case FAILED_RULE_TYPE_PDR:
+      s = format(s, "%s: %u", failed_rule_type[n->type], n->id);
+      break;
+
+    case FAILED_RULE_TYPE_FAR:
+    case FAILED_RULE_TYPE_QER:
+    case FAILED_RULE_TYPE_URR:
+      s = format(s, "%s: %u", failed_rule_type[n->type], n->id);
+      break;
+
+    default:
+      s = format(s, "undefined: %u", n->id);
+      break;
+    }
+  return s;
 }
 
 static int decode_failed_rule_id(u8 *data, u16 length, void *p)
@@ -2632,8 +2839,6 @@ static int encode_failed_rule_id(void *p, u8 **vec)
 {
   pfcp_failed_rule_id_t *v = p;
 
-  pfcp_debug ("PFCP: Failed Rule: Type: %d, Id: %d.", v->type, v->id);
-
   put_u8(*vec, v->type);
   switch (v->type) {
   case FAILED_RULE_TYPE_PDR:
@@ -2663,11 +2868,17 @@ static int encode_failed_rule_id(void *p, u8 **vec)
   return 0;
 }
 
+static u8 * format_time_quota_mechanism(u8 * s, va_list * args)
+{
+  pfcp_time_quota_mechanism_t *v = va_arg (*args, pfcp_time_quota_mechanism_t *);
+
+  return format(s, "TODO: %U", format_hex_bytes, v, sizeof(*v));
+}
+
 static int decode_time_quota_mechanism(u8 *data, u16 length, void *p)
 {
   pfcp_time_quota_mechanism_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO decode_time_quota_mechanism");
   return 0;
 }
 
@@ -2675,27 +2886,26 @@ static int encode_time_quota_mechanism(void *p, u8 **vec)
 {
   pfcp_time_quota_mechanism_t *v __attribute__ ((unused)) = p;
 
-  pfcp_warning ("PFCP: TODO encode_time_quota_mechanism");
   return 0;
 }
 
 u8 *
 format_user_plane_ip_resource_information(u8 * s, va_list * args)
 {
-  pfcp_user_plane_ip_resource_information_t *i =
+  pfcp_user_plane_ip_resource_information_t *v =
     va_arg (*args, pfcp_user_plane_ip_resource_information_t *);
 
-  if (i->network_instance)
+  if (v->network_instance)
     s = format(s, "Network Instance: %U, ",
-	       format_network_instance, i->network_instance);
+	       format_network_instance, v->network_instance);
 
-  if (i->flags & USER_PLANE_IP_RESOURCE_INFORMATION_V4)
-    s = format(s, "%U, ", format_ip4_address, &i->ip4);
-  if (i->flags & USER_PLANE_IP_RESOURCE_INFORMATION_V6)
-    s = format(s, "%U, ", format_ip6_address, &i->ip6);
+  if (v->flags & USER_PLANE_IP_RESOURCE_INFORMATION_V4)
+    s = format(s, "%U, ", format_ip4_address, &v->ip4);
+  if (v->flags & USER_PLANE_IP_RESOURCE_INFORMATION_V6)
+    s = format(s, "%U, ", format_ip6_address, &v->ip6);
 
-  if (i->teid_range_indication != 0)
-    s = format(s, "teid: 0x%02x000000/%d", i->teid_range, i->teid_range_indication);
+  if (v->teid_range_indication != 0)
+    s = format(s, "teid: 0x%02x000000/%u", v->teid_range, v->teid_range_indication);
   else
     _vec_len(s) -= 2;
 
@@ -2746,8 +2956,6 @@ static int decode_user_plane_ip_resource_information(u8 *data, u16 length, void 
       vec_add(v->network_instance, data, length);
     }
 
-  pfcp_debug ("PFCP: User Plane IP Resource Information: '%U'",
-	      format_user_plane_ip_resource_information, v);
   return 0;
 }
 
@@ -2755,9 +2963,6 @@ static int encode_user_plane_ip_resource_information(void *p, u8 **vec)
 {
   pfcp_user_plane_ip_resource_information_t *v = p;
   u8 flags;
-
-  pfcp_debug ("PFCP: User Plane IP Resource Information: '%U'",
-	      format_user_plane_ip_resource_information, v);
 
   flags = v->flags;
   flags |= (v->teid_range_indication & 0x07) << 2;
@@ -3619,6 +3824,7 @@ static struct pfcp_group_ie_def pfcp_update_duplicating_parameters_group[] =
 #define SIMPLE_IE(IE, TYPE)				\
   [IE] = {						\
     .length = sizeof(pfcp_ ## TYPE ## _t),		\
+    .format = format_ ## TYPE,				\
     .decode = decode_ ## TYPE,				\
     .encode = encode_ ## TYPE,				\
 }
@@ -3626,6 +3832,7 @@ static struct pfcp_group_ie_def pfcp_update_duplicating_parameters_group[] =
 #define SIMPLE_IE_FREE(IE, TYPE)			\
   [IE] = {						\
     .length = sizeof(pfcp_ ## TYPE ## _t),		\
+    .format = format_ ## TYPE,				\
     .decode = decode_ ## TYPE,				\
     .encode = encode_ ## TYPE,				\
     .free = free_ ## TYPE,				\
@@ -4700,10 +4907,20 @@ static int decode_group(u8 *p, int len, const struct pfcp_ie_def *grp_def,
 
 static int decode_ie(const struct pfcp_ie_def *def, u8 *ie, u16 length, void *p)
 {
+#if CLIB_DEBUG > 0
+  uword id = def - group_specs;
+#endif
+  int r;
+
   if (def->size != 0)
       return decode_group(ie, length, def, (struct pfcp_group *)p);
   else
-    return def->decode(ie, length, p);
+    {
+      if ((r = def->decode(ie, length, p)) == 0)
+	pfcp_debug ("PFCP: %s: %U.", ie_desc[id], def->format, p);
+
+      return r;
+    }
 }
 
 static int decode_vector_ie(const struct pfcp_ie_def *def, u8 *ie, u16 length, void *p)
@@ -4789,6 +5006,9 @@ static int encode_ie(const struct pfcp_group_ie_def *item,
 		     const struct pfcp_ie_def *def,
 		     u8 *v, u8 **vec)
 {
+#if CLIB_DEBUG > 0
+  uword id = def - group_specs;
+#endif
   int hdr = _vec_len(*vec);
   int r = 0;
 
@@ -4798,7 +5018,10 @@ static int encode_ie(const struct pfcp_group_ie_def *item,
   if (def->size != 0)
     r = encode_group(def, (struct pfcp_group *)v, vec);
   else
-    r = def->encode(v, vec);
+    {
+      pfcp_debug ("PFCP: %s: %U.", ie_desc[id], def->format, v);
+      r = def->encode(v, vec);
+    }
 
   if (r == 0)
     finalize_ie(*vec, hdr, _vec_len(*vec));
