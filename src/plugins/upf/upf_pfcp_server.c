@@ -1068,16 +1068,8 @@ sx_process (vlib_main_t * vm, vlib_node_runtime_t * rt, vlib_frame_t * f)
 	    }
 	}
 
-      if (expired)
-	{
-	  _vec_len (expired) = 0;
-	}
-
-      if (event_data)
-	{
-	  _vec_len (event_data) = 0;
-	}
-      // vec_free (event_data);
+      vec_reset_length (expired);
+      vec_reset_length (event_data);
     }
 
   return (0);
