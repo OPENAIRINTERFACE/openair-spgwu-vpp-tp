@@ -1981,6 +1981,7 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
 {
   upf_urr_traffic_t tt = {.ip = ip46_address_initializer};
   upf_event_urr_data_t * uev = NULL;
+  f64 now = vlib_time_now (vm);
   upf_main_t *gtm = &upf_main;
   upf_event_urr_hdr_t * ueh;
   int status = URR_OK;
@@ -2081,9 +2082,22 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
 
 	    pool_get (urr->traffic, t);
 	    *t = tt;
+	    t->first_seen = now;
 	    hash_set_mem_alloc (&urr->traffic_by_ue, &t->ip, t - urr->traffic);
 
 	    vec_add1_ha(uev, ev, sizeof (upf_event_urr_hdr_t), 0);
+	    status |= URR_START_OF_TRAFFIC;
+	  }
+	else if (t && t->first_seen + 60 < now)
+	  {
+	    upf_event_urr_data_t *ev;
+
+	    /* crude 60 second timeout */
+
+	    t->first_seen = now;
+	    vec_add2_ha(uev, ev, 1, sizeof (upf_event_urr_hdr_t), 0);
+	    ev->urr_id = urr->id;
+	    ev->trigger = URR_START_OF_TRAFFIC;
 	    status |= URR_START_OF_TRAFFIC;
 	  }
 	// TODO: trafic was expired, rearm and send report
@@ -2518,6 +2532,27 @@ format_sx_session (u8 * s, va_list * args)
 			    urr->usage_before_monitoring_time.start_time);
 	      }
 	  }
+      }
+    if (urr->traffic)
+      {
+	vlib_main_t * vm = gtm->vlib_main;
+	f64 now = vlib_time_now (vm);
+	upf_urr_traffic_t *tt;
+
+	s = format (s, "  Start Of Traffic UE IPs: %u, now: %U\n",
+		    pool_elts (urr->traffic),
+		    format_vlib_time, vm, now);
+
+	/* *INDENT-OFF* */
+	pool_foreach (tt, urr->traffic,
+	({
+	  s = format (s, "%U @ %U [%U]\n",
+		      format_ip46_address, &tt->ip, IP46_TYPE_ANY,
+		      format_vlib_time, vm, tt->first_seen,
+		      format_vlib_time, vm, now - tt->first_seen);
+
+	}));
+	/* *INDENT-ON* */
       }
   }
   vec_foreach (qer, rules->qer)
