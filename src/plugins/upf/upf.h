@@ -422,6 +422,7 @@ typedef struct {
 
   ip46_address_t ip;
   //TODO: timeout
+  f64 first_seen;
 } upf_urr_traffic_t;
 
 /* Usage Reporting Rules */
