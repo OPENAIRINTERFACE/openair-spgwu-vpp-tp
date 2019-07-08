@@ -1157,12 +1157,14 @@ upip_ip_interface_ip (upf_far_forward_t * ff, u32 fib_index, int is_ip4)
 {
   ip_lookup_main_t *lm = is_ip4 ? &ip4_main.lookup_main : &ip6_main.lookup_main;
   upf_main_t *gtm = &upf_main;
-  ip_interface_address_t *a;
   upf_upip_res_t *res;
+  void *oldheap;
+  void *r;
 
   /* *INDENT-OFF* */
   pool_foreach (res, gtm->upip_res,
   ({
+    ip_interface_address_t *a = NULL;
     uword *p;
 
     if (is_ip4 && is_zero_ip4_address (&res->ip4))
@@ -1175,6 +1177,8 @@ upip_ip_interface_ip (upf_far_forward_t * ff, u32 fib_index, int is_ip4)
 
     if (~0 != res->nwi && ~0 != ff->nwi && ff->nwi != res->nwi)
       continue;
+
+    oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
 
     if (is_ip4)
       {
@@ -1190,17 +1194,22 @@ upip_ip_interface_ip (upf_far_forward_t * ff, u32 fib_index, int is_ip4)
 	ip6_addr_fib_init (&ip6_af, &res->ip6, fib_index);
 	p = mhash_get (&lm->address_to_if_address_index, &ip6_af);
       }
-    if (!p)
-      continue;
 
-    a = pool_elt_at_index (lm->if_address_pool, p[0]);
-    if (a->sw_if_index == ff->dst_sw_if_index)
+    if (p)
+      a = pool_elt_at_index (lm->if_address_pool, p[0]);
+
+    clib_mem_set_heap (oldheap);
+
+    if (a && a->sw_if_index == ff->dst_sw_if_index)
       return (is_ip4) ? (void *)&res->ip4 : (void *)&res->ip6;
   }));
   /* *INDENT-ON* */
 
   clib_warning("No NWI IP found, using first interface IP");
-  return ip_interface_get_first_ip (ff->dst_sw_if_index, is_ip4);
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
+  r = ip_interface_get_first_ip (ff->dst_sw_if_index, is_ip4);
+  clib_mem_set_heap (oldheap);
+  return r;
 }
 
 static void

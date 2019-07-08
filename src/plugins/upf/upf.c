@@ -134,7 +134,11 @@ vnet_upf_pfcp_endpoint_add_del (ip46_address_t * ip, u32 fib_index, u8 add)
   upf_main_t *gtm = &upf_main;
   ip46_address_fib_t key;
   upf_pfcp_endpoint_t *ep;
+  void *oldheap;
+  int r = 0;
   uword *p;
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   key.addr = *ip;
   key.fib_index = fib_index;
@@ -144,7 +148,10 @@ vnet_upf_pfcp_endpoint_add_del (ip46_address_t * ip, u32 fib_index, u8 add)
   if (add)
     {
       if (p)
-	return VNET_API_ERROR_VALUE_EXIST;
+	{
+	  r = VNET_API_ERROR_VALUE_EXIST;
+	  goto out_heap;
+	}
 
       pool_get (gtm->pfcp_endpoints, ep);
       memset (ep, 0, sizeof (*ep));
@@ -156,14 +163,19 @@ vnet_upf_pfcp_endpoint_add_del (ip46_address_t * ip, u32 fib_index, u8 add)
   else
     {
       if (!p)
-	return VNET_API_ERROR_NO_SUCH_ENTRY;
+	{
+	  r = VNET_API_ERROR_NO_SUCH_ENTRY;
+	  goto out_heap;
+	}
 
       ep = pool_elt_at_index (gtm->pfcp_endpoints, p[0]);
       mhash_unset (&gtm->pfcp_endpoint_index, &ep->key, NULL);
       pool_put (gtm->pfcp_endpoints, ep);
     }
 
-  return 0;
+ out_heap:
+  clib_mem_set_heap (oldheap);
+  return r;
 }
 
 clib_error_t *
@@ -303,14 +315,21 @@ vnet_upf_nwi_add_del (u8 * name, u32 table_id, u8 add)
 {
   upf_main_t *gtm = &upf_main;
   upf_nwi_t *nwi;
+  void *oldheap;
+  int r = 0;
   uword *p;
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   p = hash_get_mem (gtm->nwi_index_by_name, name);
 
   if (add)
     {
       if (p)
-	return VNET_API_ERROR_VALUE_EXIST;
+	{
+	  r = VNET_API_ERROR_VALUE_EXIST;
+	  goto out_heap;
+	}
 
       pool_get (gtm->nwis, nwi);
       nwi->name = vec_dup (name);
@@ -321,7 +340,10 @@ vnet_upf_nwi_add_del (u8 * name, u32 table_id, u8 add)
   else
     {
       if (!p)
-	return VNET_API_ERROR_NO_SUCH_ENTRY;
+	{
+	  r = VNET_API_ERROR_NO_SUCH_ENTRY;
+	  goto out_heap;
+	}
 
       nwi = pool_elt_at_index (gtm->nwis, p[0]);
 
@@ -330,7 +352,9 @@ vnet_upf_nwi_add_del (u8 * name, u32 table_id, u8 add)
       pool_put (gtm->nwis, nwi);
     }
 
-  return 0;
+ out_heap:
+  clib_mem_set_heap (oldheap);
+  return r;
 }
 
 /**
@@ -594,13 +618,20 @@ vnet_upf_upip_add_del (ip4_address_t * ip4, ip6_address_t * ip6,
     .teid = teid,
     .mask = mask
   };
+  void *oldheap;
+  int r = 0;
   uword *p;
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   if (name)
     {
       p = hash_get_mem (gtm->nwi_index_by_name, name);
       if (!p)
-	return VNET_API_ERROR_NO_SUCH_ENTRY;
+	{
+	  r = VNET_API_ERROR_NO_SUCH_ENTRY;
+	  goto out_heap;
+	}
 
       res.nwi = p[0];
     }
@@ -610,7 +641,10 @@ vnet_upf_upip_add_del (ip4_address_t * ip4, ip6_address_t * ip6,
   if (add)
     {
       if (p)
-	return VNET_API_ERROR_VALUE_EXIST;
+	{
+	  r = VNET_API_ERROR_VALUE_EXIST;
+	  goto out_heap;
+	}
 
       pool_get (gtm->upip_res, ip_res);
       memcpy (ip_res, &res, sizeof (res));
@@ -620,14 +654,19 @@ vnet_upf_upip_add_del (ip4_address_t * ip4, ip6_address_t * ip6,
   else
     {
       if (!p)
-	return VNET_API_ERROR_NO_SUCH_ENTRY;
+	{
+	  r = VNET_API_ERROR_NO_SUCH_ENTRY;
+	  goto out_heap;
+	}
 
       ip_res = pool_elt_at_index (gtm->upip_res, p[0]);
       mhash_unset (&gtm->upip_res_index, ip_res, NULL);
       pool_put (gtm->upip_res, ip_res);
     }
 
-  return 0;
+ out_heap:
+  clib_mem_set_heap (oldheap);
+  return r;
 }
 
 clib_error_t *
@@ -1883,13 +1922,20 @@ upf_init (vlib_main_t * vm)
 {
   upf_main_t *sm = &upf_main;
   clib_error_t *error;
+  void *oldheap;
 
   sm->vnet_main = vnet_get_main ();
   sm->vlib_main = vm;
+  sm->mheap = mheap_alloc_with_lock (0 /* use VM */ ,
+				     0 /* autosize ? */,
+				     1 /* locked */ );
+  clib_warning ("GTP mheap %p\n", sm->mheap);
 
   if ((error =
        vlib_call_init_function (vm, upf_proxy_main_init)))
     return error;
+
+  oldheap = clib_mem_set_heap (sm->mheap);
 
   mhash_init (&sm->pfcp_endpoint_index, sizeof (uword), sizeof (ip46_address_t));
   sm->nwi_index_by_name =
@@ -1920,15 +1966,17 @@ upf_init (vlib_main_t * vm)
 			"upf_qer_by_ie", UPF_MAPPING_BUCKETS,
 			UPF_MAPPING_MEMORY_SIZE);
 
+  sm->upf_app_by_name = hash_create_vec ( /* initial length */ 32,
+					 sizeof (u8), sizeof (uword));
+
+  clib_mem_set_heap (oldheap);
+
   udp_register_dst_port (vm, UDP_DST_PORT_GTPU,
 			 gtpu4_input_node.index, /* is_ip4 */ 1);
   udp_register_dst_port (vm, UDP_DST_PORT_GTPU6,
 			 gtpu6_input_node.index, /* is_ip4 */ 0);
 
   sm->fib_node_type = fib_node_register_new_type (&upf_vft);
-
-  sm->upf_app_by_name = hash_create_vec ( /* initial length */ 32,
-					 sizeof (u8), sizeof (uword));
 
   error = flowtable_init (vm);
   if (error)

@@ -63,6 +63,7 @@ gtpu_end_marker (u32 fib_index, u32 dpoi_index, u8 * rewrite, int is_ip4)
 {
   upf_main_t *gtm = &upf_main;
   vlib_main_t *vm = gtm->vlib_main;
+  void * oldheap;
   u32 bi = 0;
   vlib_buffer_t *p0;
   ip4_gtpu_header_t *gtpu4;
@@ -70,8 +71,13 @@ gtpu_end_marker (u32 fib_index, u32 dpoi_index, u8 * rewrite, int is_ip4)
   u16 new_l0;
   ip_csum_t sum0;
 
+  oldheap = clib_mem_set_heap (vm->heap_base);
+
   if (vlib_buffer_alloc (vm, &bi, 1) != 1)
-    return ~0;
+    {
+      clib_mem_set_heap (oldheap);
+      return ~0;
+    }
 
   p0 = vlib_get_buffer (vm, bi);
   VLIB_BUFFER_TRACE_TRAJECTORY_INIT (p0);
@@ -130,6 +136,8 @@ gtpu_end_marker (u32 fib_index, u32 dpoi_index, u8 * rewrite, int is_ip4)
       gtpu6->gtpu.type = GTPU_TYPE_END_MARKER;
       gtpu6->gtpu.length = 0;
     }
+
+  clib_mem_set_heap (oldheap);
 
   return bi;
 }

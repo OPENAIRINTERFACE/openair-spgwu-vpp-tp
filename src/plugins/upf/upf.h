@@ -730,6 +730,9 @@ typedef struct
   /* API message ID base */
   u16 msg_id_base;
 
+  /* private heap */
+  void *mheap;
+
   /* convenience */
   vlib_main_t *vlib_main;
   vnet_main_t *vnet_main;

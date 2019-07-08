@@ -359,6 +359,7 @@ sx_create_session (upf_node_assoc_t * assoc, int sx_fib_index,
   u32 hw_if_index = ~0;
   u32 sw_if_index = ~0;
   upf_session_t *sx;
+  void *oldheap;
 
   gtp_debug ("CP F-SEID: 0x%016" PRIx64 " @ %U\n"
 	     "UP F-SEID: 0x%016" PRIx64 " @ %U\n",
@@ -382,6 +383,8 @@ sx_create_session (upf_node_assoc_t * assoc, int sx_fib_index,
   //TODO sx->up_f_seid = sx - gtm->sessions;
   node_assoc_attach_session (assoc, sx);
   hash_set (gtm->session_by_id, cp_seid, sx - gtm->sessions);
+
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
 
   vnet_hw_interface_t *hi;
 
@@ -422,14 +425,18 @@ sx_create_session (upf_node_assoc_t * assoc, int sx_fib_index,
   sx->hw_if_index = hw_if_index;
   sx->sw_if_index = sw_if_index = hi->sw_if_index;
 
-  vec_validate_init_empty (gtm->session_index_by_sw_if_index, sw_if_index,
-			   ~0);
-  gtm->session_index_by_sw_if_index[sw_if_index] = sx - gtm->sessions;
-
   /* setup l2 input config with l2 feature and bd 0 to drop packet */
   vec_validate (l2im->configs, sw_if_index);
   l2im->configs[sw_if_index].feature_bitmap = L2INPUT_FEAT_DROP;
   l2im->configs[sw_if_index].bd_index = 0;
+
+  clib_mem_set_heap (oldheap);
+
+  vec_validate_init_empty (gtm->session_index_by_sw_if_index, sw_if_index,
+			   ~0);
+  gtm->session_index_by_sw_if_index[sw_if_index] = sx - gtm->sessions;
+
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
 
   vnet_sw_interface_t *si = vnet_get_sw_interface (vnm, sw_if_index);
   si->flags &= ~VNET_SW_INTERFACE_FLAG_HIDDEN;
@@ -444,6 +451,8 @@ sx_create_session (upf_node_assoc_t * assoc, int sx_fib_index,
 
   vnet_get_sw_interface (vnet_get_main (), sw_if_index)->flood_class =
     VNET_FLOOD_CLASS_TUNNEL_NORMAL;
+
+  clib_mem_set_heap (oldheap);
 
   vlib_worker_thread_barrier_release (vm);
 
@@ -530,6 +539,7 @@ peer_addr_ref (const upf_far_forward_t * fwd)
   clib_bihash_kv_24_8_t kv, value;
   u32 fib_index;
   upf_peer_t *p;
+  void *oldheap;
 
   fib_index = (is_ip4) ?
     ip4_fib_table_get_index_for_sw_if_index (fwd->dst_sw_if_index) :
@@ -565,6 +575,8 @@ peer_addr_ref (const upf_far_forward_t * fwd)
   kv.value = p - gtm->peers;
   clib_bihash_add_del_24_8 (&gtm->peer_index_by_ip, &kv, 1 /* is_add */);
 
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
+
   fib_node_init (&p->node, gtm->fib_node_type);
   fib_prefix_t tun_dst_pfx;
   fib_prefix_from_ip46_addr (&fwd->outer_header_creation.ip, &tun_dst_pfx);
@@ -574,6 +586,8 @@ peer_addr_ref (const upf_far_forward_t * fwd)
   p->sibling_index = fib_entry_child_add
     (p->fib_entry_index, gtm->fib_node_type, p - gtm->peers);
   upf_peer_restack_dpo (p);
+
+  clib_mem_set_heap (oldheap);
 
   return p - gtm->peers;
 }
@@ -586,6 +600,7 @@ peer_addr_unref (const upf_far_forward_t * fwd)
   upf_main_t *gtm = &upf_main;
   clib_bihash_kv_24_8_t kv, value;
   upf_peer_t *p = NULL;
+  void *oldheap;
 
   kv.key[0] = fwd->outer_header_creation.ip.as_u64[0];
   kv.key[1] = fwd->outer_header_creation.ip.as_u64[1];
@@ -602,9 +617,14 @@ peer_addr_unref (const upf_far_forward_t * fwd)
 
   clib_bihash_add_del_24_8 (&gtm->peer_index_by_ip, &kv, 0 /* is_add */);
 
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
+
   fib_entry_child_remove (p->fib_entry_index, p->sibling_index);
   fib_table_entry_delete_index (p->fib_entry_index, FIB_SOURCE_RR);
   fib_node_deinit (&p->node);
+
+  clib_mem_set_heap (oldheap);
+
   pool_put (gtm->peers, p);
 
   return 0;
@@ -877,6 +897,7 @@ sx_disable_session (upf_session_t * sx, int drop_msgs)
   gtpu4_endp_rule_t *v4_teid;
   gtpu6_endp_rule_t *v6_teid;
   upf_urr_t *urr;
+  void *oldheap;
 
   hash_unset (gtm->session_by_id, sx->cp_seid);
   vec_foreach (v4_teid, active->v4_teid) sx_add_del_v4_teid (v4_teid, sx, 0);
@@ -887,6 +908,8 @@ sx_disable_session (upf_session_t * sx, int drop_msgs)
 
   //TODO: free DL fifo...
 
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
+
   /* disable tunnel if */
   vnet_sw_interface_set_flags (vnm, sx->sw_if_index, 0 /* down */ );
   vnet_sw_interface_t *si = vnet_get_sw_interface (vnm, sx->sw_if_index);
@@ -895,6 +918,8 @@ sx_disable_session (upf_session_t * sx, int drop_msgs)
   /* make sure session is removed from l2 bd or xconnect */
   set_int_l2_mode (gtm->vlib_main, vnm, MODE_L3, sx->sw_if_index, 0, 0, 0, 0);
   gtm->session_index_by_sw_if_index[sx->sw_if_index] = ~0;
+
+  clib_mem_set_heap (oldheap);
 
   /* stop all timers */
   vec_foreach (urr, active->urr)
@@ -1076,8 +1101,12 @@ static void
 sx_add_del_ue_ip (const void *ip, void *si, int is_add)
 {
   const ip46_address_fib_t *ue_ip = ip;
+  upf_main_t *gtm = &upf_main;
   upf_session_t *sess = si;
   fib_prefix_t pfx;
+  void *oldheap;
+
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
 
   memset (&pfx, 0, sizeof (pfx));
 
@@ -1113,6 +1142,8 @@ sx_add_del_ue_ip (const void *ip, void *si, int is_add)
 				   NULL, sess->sw_if_index, ~0, 1,
 				   FIB_ROUTE_PATH_FLAG_NONE);
     }
+
+  clib_mem_set_heap (oldheap);
 }
 
 static void
@@ -1165,6 +1196,7 @@ sx_add_del_tdf (const void *tdf, void *si, int is_ip4, int is_add)
     .fp_addr = acl->match.address[UPF_ACL_FIELD_SRC],
   };
   u32 fib_index;
+  void *oldheap;
 
   if (acl->fib_index >= vec_len (gtm->tdf_ul_table[pfx.fp_proto]))
     return;
@@ -1177,6 +1209,8 @@ sx_add_del_tdf (const void *tdf, void *si, int is_ip4, int is_add)
   fib_index = vec_elt (gtm->tdf_ul_table[pfx.fp_proto], acl->fib_index);
   if (~0 == fib_index)
     return;
+
+  oldheap = clib_mem_set_heap (gtm->vlib_main->heap_base);
 
   if (is_ip4)
     {
@@ -1207,6 +1241,8 @@ sx_add_del_tdf (const void *tdf, void *si, int is_ip4, int is_add)
 				   NULL, sess->sw_if_index, ~0, 1,
 				   FIB_ROUTE_PATH_FLAG_NONE);
     }
+
+  clib_mem_set_heap (oldheap);
 }
 
 static void
@@ -1921,9 +1957,12 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
   upf_main_t *gtm = &upf_main;
   upf_event_urr_hdr_t * ueh;
   int status = URR_OK;
+  void *oldheap;
   u16 *urr_id;
 
   gtp_debug ("DL: %d, UL: %d\n", is_dl, is_ul);
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   clib_spinlock_lock (&sess->lock);
 
@@ -2044,6 +2083,8 @@ process_urrs (vlib_main_t * vm, upf_session_t * sess,
       gtp_debug ("sending URR event on %wd\n", (uword) ueh->session_idx);
       upf_pfcp_server_session_usage_report (uev);
     }
+
+  clib_mem_set_heap (oldheap);
 
   return next;
 }

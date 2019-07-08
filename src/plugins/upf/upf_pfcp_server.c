@@ -75,6 +75,7 @@ flush_ip_lookup_tx_frames (vlib_main_t *vm, int is_ip4)
   sx_server_main_t *sxsm = &sx_server_main;
   vlib_frame_t *f;
   u32 next_index;
+  void *oldheap;
 
   f = sxsm->ip_lookup_tx_frames[!is_ip4];
   if (!f || f->n_vectors == 0)
@@ -83,7 +84,10 @@ flush_ip_lookup_tx_frames (vlib_main_t *vm, int is_ip4)
   /* Send to IP lookup */
   next_index = is_ip4 ? ip4_lookup_node.index : ip6_lookup_node.index;
 
+  oldheap = clib_mem_set_heap (sxsm->vlib_main->heap_base);
   vlib_put_frame_to_node (vm, next_index, f);
+  clib_mem_set_heap (oldheap);
+
   sxsm->ip_lookup_tx_frames[!is_ip4] = 0;
 }
 
@@ -93,10 +97,13 @@ void upf_ip_lookup_tx (u32 bi, int is_ip4)
   vlib_main_t *vm = vlib_get_main ();
   u32 to_node_index;
   vlib_frame_t *f;
+  void *oldheap;
   u32 *to_next;
 
   if (~0 == bi)
     return;
+
+  oldheap = clib_mem_set_heap (sxsm->vlib_main->heap_base);
 
   to_node_index = is_ip4 ?
     ip4_lookup_node.index : ip6_lookup_node.index;
@@ -113,6 +120,8 @@ void upf_ip_lookup_tx (u32 bi, int is_ip4)
   to_next[f->n_vectors] = bi;
   f->n_vectors += 1;
 
+  clib_mem_set_heap (oldheap);
+
   if (f->n_vectors == VLIB_FRAME_SIZE)
     flush_ip_lookup_tx_frames (vm, is_ip4);
 }
@@ -120,15 +129,20 @@ void upf_ip_lookup_tx (u32 bi, int is_ip4)
 static void
 upf_pfcp_send_data (sx_msg_t * msg)
 {
+  sx_server_main_t *sxsm = &sx_server_main;
   vlib_main_t *vm = vlib_get_main ();
   vlib_buffer_t *b0 = 0;
+  void * oldheap;
   u32 bi0 = ~0;
   int is_ip4;
   u8 *data0;
 
+  oldheap = clib_mem_set_heap (sxsm->vlib_main->heap_base);
+
   if (vlib_buffer_alloc (vm, &bi0, 1) != 1)
     {
       gtp_debug ("can't allocate buffer for Sx send event");
+      clib_mem_set_heap (oldheap);
       return;
     }
 
@@ -162,6 +176,8 @@ upf_pfcp_send_data (sx_msg_t * msg)
 
   vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
   vnet_buffer (b0)->sw_if_index[VLIB_TX] = msg->fib_index;
+
+  clib_mem_set_heap (oldheap);
 
   upf_ip_lookup_tx (bi0, is_ip4);
 }
@@ -1088,6 +1104,9 @@ sx_process (vlib_main_t * vm, vlib_node_runtime_t * rt, vlib_frame_t * f)
   upf_main_t *gtm = &upf_main;
   u32 *expired = NULL;
   u32 last_expired;
+  void *oldheap;
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   sx_msg_pool_init (sxsm);
   sxsm->timer.last_run_time =
@@ -1108,8 +1127,10 @@ sx_process (vlib_main_t * vm, vlib_node_runtime_t * rt, vlib_frame_t * f)
 
       timeout = (f64) ticks_until_expiration * TW_SECS_PER_CLOCK;
 
+      clib_mem_set_heap (oldheap);
       (void) vlib_process_wait_for_event_or_clock (vm, timeout);
       event_type = vlib_process_get_events (vm, &event_data);
+      oldheap = clib_mem_set_heap (gtm->mheap);
 
       sx_msg_pool_loop_start (sxsm);
       sxsm->now = unix_time_now ();
@@ -1259,8 +1280,11 @@ upf_pfcp_handle_input (vlib_main_t * vm, vlib_buffer_t * b, int is_ip4)
   ip4_header_t *ip4;
   ip6_header_t *ip6;
   sx_msg_t *msg;
+  void *oldheap;
   u8 *data;
   uword *p;
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
 
   /* signal Sx process to handle data */
   msg = clib_mem_alloc_aligned_no_fail (sizeof (*msg), CLIB_CACHE_LINE_BYTES);
@@ -1295,12 +1319,15 @@ upf_pfcp_handle_input (vlib_main_t * vm, vlib_buffer_t * b, int is_ip4)
   if (!p)
     {
       clib_mem_free (msg);
+      clib_mem_set_heap (oldheap);
       return;
     }
   msg->pfcp_endpoint = p[0];
 
   msg->data = vec_new (u8, vlib_buffer_length_in_chain (vm, b));
   vlib_buffer_contents (vm, vlib_get_buffer_index (vm, b), msg->data);
+
+  clib_mem_set_heap (oldheap);
 
   gtp_debug ("sending event %p %U:%d - %U:%d, data %p", msg,
 	     format_ip46_address, &msg->rmt.address, IP46_TYPE_ANY,
@@ -1317,8 +1344,11 @@ upf_pfcp_server_session_usage_report (upf_event_urr_data_t * uev)
 {
   sx_server_main_t *sx = &sx_server_main;
   vlib_main_t *vm = sx->vlib_main;
+  void *oldheap;
 
+  oldheap = clib_mem_set_heap (vm->heap_base);
   vlib_process_signal_event_mt (vm, sx_api_process_node.index, EVENT_URR, (uword) uev);
+  clib_mem_set_heap (oldheap);
 }
 
 /*********************************************************/
@@ -1327,17 +1357,26 @@ clib_error_t *
 sx_server_main_init (vlib_main_t * vm)
 {
   sx_server_main_t *sx = &sx_server_main;
+  upf_main_t *gtm = &upf_main;
   clib_error_t *error;
+  void *oldheap;
+
+  clib_warning ("GTP mheap %p\n", gtm->mheap);
 
   if ((error = vlib_call_init_function (vm, vnet_interface_cli_init)))
     return error;
 
   sx->vlib_main = vm;
   sx->start_time = time (NULL);
+
+  oldheap = clib_mem_set_heap (gtm->mheap);
+
   mhash_init (&sx->response_q, sizeof (uword), sizeof (u64) * 4);
 
   TW (tw_timer_wheel_init) (&sx->timer, NULL,
 			    TW_SECS_PER_CLOCK /* 10ms timer interval */ , ~0);
+
+  clib_mem_set_heap (oldheap);
 
   udp_register_dst_port (vm, UDP_DST_PORT_SX,
 			 sx4_input_node.index, /* is_ip4 */ 1);
