@@ -467,6 +467,7 @@ typedef struct
   /* pool of urr traffic info */
   upf_urr_traffic_t *traffic;
   uword * traffic_by_ue;
+  urr_time_t traffic_timer;
 } upf_urr_t;
 
 /* QoS Enforcement Rules */

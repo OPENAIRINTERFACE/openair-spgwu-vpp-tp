@@ -975,6 +975,7 @@ sx_disable_session (upf_session_t * sx, int drop_msgs)
     upf_pfcp_session_stop_urr_time (&urr->monitoring_time, now);
     upf_pfcp_session_stop_urr_time (&urr->time_threshold, now);
     upf_pfcp_session_stop_urr_time (&urr->time_quota, now);
+    upf_pfcp_session_stop_urr_time (&urr->traffic_timer, now);
   }
 
   if (drop_msgs)
@@ -1890,6 +1891,7 @@ sx_update_apply (upf_session_t * sx)
 	    upf_pfcp_session_stop_urr_time (&urr->monitoring_time, now);
 	    upf_pfcp_session_stop_urr_time (&urr->time_threshold, now);
 	    upf_pfcp_session_stop_urr_time (&urr->time_quota, now);
+	    upf_pfcp_session_stop_urr_time (&urr->traffic_timer, now);
 
 	    continue;
 	  }
@@ -2550,9 +2552,11 @@ format_sx_session (u8 * s, va_list * args)
 	f64 now = vlib_time_now (vm);
 	upf_urr_traffic_t *tt;
 
-	s = format (s, "  Start Of Traffic UE IPs: %u, now: %U\n",
+	s = format (s, "  Start Of Traffic UE IPs: %u, now: %U\n"
+		    "    Timer: %U\n",
 		    pool_elts (urr->traffic),
-		    format_vlib_time, vm, now);
+		    format_vlib_time, vm, now,
+		    format_urr_time, &urr->traffic_timer);
 
 	/* *INDENT-OFF* */
 	pool_foreach (tt, urr->traffic,
