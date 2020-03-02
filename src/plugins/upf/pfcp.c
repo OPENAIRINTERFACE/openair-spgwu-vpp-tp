@@ -4870,6 +4870,7 @@ static struct pfcp_group_ie_def pfcp_create_urr_group[] =
     },
     [CREATE_URR_LINKED_URR_ID] = {
       .type = PFCP_IE_LINKED_URR_ID,
+      .is_array = true,
       .offset = offsetof(pfcp_create_urr_t, linked_urr_id)
     },
     [CREATE_URR_MEASUREMENT_INFORMATION] = {
@@ -5165,6 +5166,7 @@ static struct pfcp_group_ie_def pfcp_update_urr_group[] =
     },
     [UPDATE_URR_LINKED_URR_ID] = {
       .type = PFCP_IE_LINKED_URR_ID,
+      .is_array = true,
       .offset = offsetof(pfcp_update_urr_t, linked_urr_id)
     },
     [UPDATE_URR_MEASUREMENT_INFORMATION] = {
